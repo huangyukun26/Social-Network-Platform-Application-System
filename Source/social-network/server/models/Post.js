@@ -8,7 +8,10 @@ const postSchema = new mongoose.Schema({
     },
     content: {
         type: String,
-        required: true
+        default: ''
+    },
+    image: {
+        type: String
     },
     likes: [{
         type: mongoose.Schema.Types.ObjectId,
@@ -25,10 +28,12 @@ const postSchema = new mongoose.Schema({
             default: Date.now
         }
     }],
-    createdAt: {
-        type: Date,
-        default: Date.now
-    }
+    savedBy: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }]
+}, {
+    timestamps: true
 });
 
 module.exports = mongoose.model('Post', postSchema); 

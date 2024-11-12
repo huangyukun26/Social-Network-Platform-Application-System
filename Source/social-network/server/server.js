@@ -8,7 +8,10 @@ const fs = require('fs');
 const app = express();
 
 // 中间件
-app.use(cors());
+app.use(cors({
+    origin: 'http://localhost:3000',
+    credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -27,15 +30,15 @@ const postDir = path.join(uploadDir, 'posts');
 // 配置静态文件服务
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// 允许跨域访问
-app.use(cors({
-    origin: 'http://localhost:3000',
-    credentials: true
-}));
-
 // 请求日志中间件
 app.use((req, res, next) => {
     console.log(`${req.method} ${req.originalUrl}`);
+    if (req.method === 'POST') {
+        console.log('请求体:', req.body);
+        if (req.file) {
+            console.log('上传的文件:', req.file);
+        }
+    }
     next();
 });
 
@@ -74,8 +77,23 @@ app.use((req, res) => {
 
 // 错误处理中间件
 app.use((err, req, res, next) => {
-    console.error('服务器错误:', err);
-    res.status(500).json({ message: '服务器错误' });
+    console.error('服务器错误详情:', {
+        message: err.message,
+        stack: err.stack,
+        path: req.path,
+        method: req.method,
+        body: req.body,
+        query: req.query,
+        headers: req.headers
+    });
+
+    res.status(500).json({ 
+        message: '服务器错误',
+        error: process.env.NODE_ENV === 'development' ? {
+            message: err.message,
+            stack: err.stack
+        } : undefined
+    });
 });
 
 // 启动服务器
