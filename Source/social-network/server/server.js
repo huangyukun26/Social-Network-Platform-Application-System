@@ -42,7 +42,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// 连接MongoDB数据库
+// 连接MongoDB���据库
 mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true
@@ -60,11 +60,13 @@ mongoose.connect(process.env.MONGODB_URI, {
 const userRoutes = require('./routes/users');
 const postRoutes = require('./routes/posts');
 const friendRoutes = require('./routes/friends');
+const followRoutes = require('./routes/followRoutes');
 
 // 注册路由
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/friends', friendRoutes);
+app.use('/api/follow', followRoutes);
 
 // 基础路由
 app.get('/', (req, res) => {
@@ -107,6 +109,9 @@ app.listen(PORT, () => {
     console.log('- POST /api/users/login');
     console.log('- POST /api/users/register');
     console.log('- GET  /api/posts/user/:userId');
+    console.log('- POST /api/follow/:userId');
+    console.log('- GET  /api/follow/:userId/followers');
+    console.log('- GET  /api/follow/:userId/following');
 });
 
 module.exports = app; 

@@ -307,7 +307,7 @@ const EditProfile = ({ onSuccess }) => {
                             </Form.Item>
                             
                             <Form.Item 
-                                label="显示关注者" 
+                                label="显示粉丝" 
                                 name={['privacy', 'showFollowers']} 
                                 valuePropName="checked"
                             >
@@ -315,7 +315,7 @@ const EditProfile = ({ onSuccess }) => {
                             </Form.Item>
                             
                             <Form.Item 
-                                label="显示正在关注" 
+                                label="显示关注" 
                                 name={['privacy', 'showFollowing']} 
                                 valuePropName="checked"
                             >

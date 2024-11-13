@@ -91,6 +91,8 @@ userSchema.virtual('stats').get(function() {
     return {
         postsCount: this.posts ? this.posts.length : 0,
         friendsCount: this.friends ? this.friends.length : 0,
+        followersCount: this.followers ? this.followers.length : 0,
+        followingCount: this.following ? this.following.length : 0,
         likesCount: this.likesReceived || 0
     };
 });
