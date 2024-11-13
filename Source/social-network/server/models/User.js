@@ -55,7 +55,32 @@ const userSchema = new mongoose.Schema({
     createdAt: {
         type: Date,
         default: Date.now
+    },
+    friends: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
+    posts: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Post'
+    }],
+    likesReceived: {
+        type: Number,
+        default: 0
     }
 });
+
+// 添加虚拟字段来计算统计数据
+userSchema.virtual('stats').get(function() {
+    return {
+        postsCount: this.posts ? this.posts.length : 0,
+        friendsCount: this.friends ? this.friends.length : 0,
+        likesCount: this.likesReceived || 0
+    };
+});
+
+// 确保虚拟字段在 JSON 中可见
+userSchema.set('toJSON', { virtuals: true });
+userSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('User', userSchema); 

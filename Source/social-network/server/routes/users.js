@@ -223,5 +223,35 @@ router.put('/profile', auth, upload.single('avatar'), async (req, res) => {
     }
 });
 
+// 获取用户资料
+router.get('/:userId', auth, async (req, res) => {
+    try {
+        const userId = req.params.userId === 'me' ? req.userId : req.params.userId;
+        console.log('Getting profile for userId:', userId);
+
+        const user = await User.findById(userId)
+            .select('-password')
+            .populate('friends', 'username avatar bio')
+            .populate('posts')
+            .lean();
+
+        if (!user) {
+            return res.status(404).json({ message: '用户不存在' });
+        }
+
+        // 添加统计数据
+        user.statistics = {
+            postsCount: user.posts ? user.posts.length : 0,
+            friendsCount: user.friends ? user.friends.length : 0,
+            likesCount: user.likesReceived || 0
+        };
+
+        res.json(user);
+    } catch (error) {
+        console.error('获取用户资料失败:', error);
+        res.status(500).json({ message: '获取用户资料失败' });
+    }
+});
+
 // 导出路由
 module.exports = router; 

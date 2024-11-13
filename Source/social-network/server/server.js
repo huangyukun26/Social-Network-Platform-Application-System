@@ -59,10 +59,12 @@ mongoose.connect(process.env.MONGODB_URI, {
 // 导入路由
 const userRoutes = require('./routes/users');
 const postRoutes = require('./routes/posts');
+const friendRoutes = require('./routes/friends');
 
 // 注册路由
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/friends', friendRoutes);
 
 // 基础路由
 app.get('/', (req, res) => {
