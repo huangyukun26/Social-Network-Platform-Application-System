@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Avatar, Tabs, Empty, Dropdown, Menu, message, Modal, Spin, Space } from 'antd';
 import { UserOutlined, TeamOutlined, HeartOutlined, CommentOutlined, PictureOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -6,6 +6,7 @@ import styled from 'styled-components';
 import axios from 'axios';
 import EditProfile from './EditProfile';
 import FollowList from './FollowList';
+import { jwtDecode } from 'jwt-decode';
 
 const { TabPane } = Tabs;
 
@@ -17,7 +18,15 @@ const ProfileContainer = styled.div`
 
 const ProfileHeader = styled.div`
   display: flex;
+  align-items: center;
+  gap: 80px;
   margin-bottom: 44px;
+`;
+
+const ProfileActions = styled.div`
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
 `;
 
 const AvatarSection = styled.div`
@@ -201,86 +210,94 @@ const PostModal = styled(Modal)`
 `;
 
 const Profile = () => {
-    const navigate = useNavigate();
     const { userId } = useParams();
-    const [activeTab, setActiveTab] = useState('posts');
-    const [posts, setPosts] = useState([]);
+    const navigate = useNavigate();
+    
+    // 1. 所有状态定义
+    const [currentUserId, setCurrentUserId] = useState(null);
     const [profileData, setProfileData] = useState(null);
+    const [isFollowing, setIsFollowing] = useState(false);
+    const [friendshipStatus, setFriendshipStatus] = useState('none');
+    const [followers, setFollowers] = useState([]);
+    const [following, setFollowing] = useState([]);
+    const [posts, setPosts] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [isDataFetching, setIsDataFetching] = useState(false);
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState(null);
     const [isPostModalVisible, setIsPostModalVisible] = useState(false);
-    const [friendshipStatus, setFriendshipStatus] = useState(null);
-    const [followers, setFollowers] = useState([]);
-    const [following, setFollowing] = useState([]);
-    const [isFollowing, setIsFollowing] = useState(false);
-    const [currentUserId, setCurrentUserId] = useState(null);
-    const [isDataFetching, setIsDataFetching] = useState(false);
+    const [activeTab, setActiveTab] = useState('posts');
 
-    // 判断是否是当前用户的个人页面
-    const isOwnProfile = !userId;
-    // 从好友状态判断是否是好友
-    const isFriend = friendshipStatus === 'friends';
+    // 2. 基础判断逻辑
+    const isOwnProfile = useMemo(() => {
+        return !userId || currentUserId === profileData?._id;
+    }, [userId, currentUserId, profileData]);
 
-    // 在组件加载时获取当前用户ID
-    useEffect(() => {
-        const fetchCurrentUser = async () => {
-            try {
-                const token = localStorage.getItem('token');
-                const response = await axios.get('http://localhost:5000/api/users/me', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setCurrentUserId(response.data._id);
-            } catch (error) {
-                console.error('获取当前用户信息失败:', error);
-            }
-        };
-        fetchCurrentUser();
-    }, []);
+    // 3. 可见性控制逻辑
+    const canViewFollowers = useMemo(() => {
+        if (isOwnProfile) return true;
+        if (profileData?.privacy?.profileVisibility === 'public') {
+            return profileData?.privacy?.showFollowers !== false;
+        }
+        if (friendshipStatus === 'friends') {
+            return profileData?.privacy?.showFollowers !== false;
+        }
+        return false;
+    }, [isOwnProfile, profileData, friendshipStatus]);
 
-    // 在获取个人资料时检查关注状态
-    useEffect(() => {
-        const checkFollowStatus = async () => {
-            if (!userId || !currentUserId) return;
-            try {
-                const token = localStorage.getItem('token');
-                const response = await axios.get(
-                    `http://localhost:5000/api/follow/status/${userId}`,
-                    { headers: { Authorization: `Bearer ${token}` }}
-                );
-                setIsFollowing(response.data.isFollowing);
-            } catch (error) {
-                console.error('获取关注状态失败:', error);
-            }
-        };
-        checkFollowStatus();
-    }, [userId, currentUserId]);
+    const canViewFollowing = useMemo(() => {
+        if (isOwnProfile) return true;
+        if (profileData?.privacy?.profileVisibility === 'public') {
+            return profileData?.privacy?.showFollowing !== false;
+        }
+        if (friendshipStatus === 'friends') {
+            return profileData?.privacy?.showFollowing !== false;
+        }
+        return false;
+    }, [isOwnProfile, profileData, friendshipStatus]);
 
-    // 好友菜单只在个人页面显示
-    const friendsMenu = isOwnProfile ? (
-        <Menu>
-            <Menu.Item key="requests" onClick={() => navigate('/friend-requests')}>
-                <TeamOutlined /> 好友请求
-            </Menu.Item>
-            <Menu.Item key="list" onClick={() => navigate('/friends')}>
-                <UserOutlined /> 好友列表
-            </Menu.Item>
-        </Menu>
-    ) : null;
-
-    const fetchFriendshipStatus = async () => {
+    // 4. 数据获取函数
+    const fetchFollowData = useCallback(async () => {
         if (!userId) return;
+        
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(
-                `http://localhost:5000/api/friends/status/${userId}`,
-                { headers: { Authorization: `Bearer ${token}` }}
-            );
-            setFriendshipStatus(response.data.status);
+            let newFollowers = [];
+            let newFollowing = [];
+
+            if (canViewFollowers) {
+                const followersRes = await axios.get(
+                    `http://localhost:5000/api/follow/followers/${userId}`,
+                    { headers: { Authorization: `Bearer ${token}` }}
+                );
+                newFollowers = followersRes.data;
+            }
+
+            if (canViewFollowing) {
+                const followingRes = await axios.get(
+                    `http://localhost:5000/api/follow/following/${userId}`,
+                    { headers: { Authorization: `Bearer ${token}` }}
+                );
+                newFollowing = followingRes.data;
+            }
+
+            setFollowers(newFollowers);
+            setFollowing(newFollowing);
+
+            setProfileData(prev => prev && ({
+                ...prev,
+                statistics: {
+                    ...prev.statistics,
+                    followersCount: canViewFollowers ? newFollowers.length : '-',
+                    followingCount: canViewFollowing ? newFollowing.length : '-'
+                }
+            }));
         } catch (error) {
-            console.error('获取好友状态失败:', error);
+            console.error('获取关注数据失败:', error);
+            setFollowers([]);
+            setFollowing([]);
         }
-    };
+    }, [userId, canViewFollowers, canViewFollowing]);
 
     const fetchProfileData = async () => {
         if (isDataFetching) return;
@@ -303,7 +320,7 @@ const Profile = () => {
             const userData = profileResponse.data;
             setProfileData(userData);
 
-            // 获取帖子（如果是公开用户或者是自己的主页）
+            // 获取帖子（如果是公开用户或者自己的主页）
             if (!userId || userData.privacy?.profileVisibility === 'public' || 
                 userData._id === currentUserId || friendshipStatus === 'friends') {
                 try {
@@ -392,9 +409,25 @@ const Profile = () => {
         }
     };
 
-    useEffect(() => {
-        fetchProfileData();
-    }, [userId]); // 只在 userId 变化时重新加载
+    // 5. 事件处理函数
+    const handleFollow = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post(
+                `http://localhost:5000/api/follow/${userId}`,
+                {},
+                { headers: { Authorization: `Bearer ${token}` }}
+            );
+            
+            setIsFollowing(!isFollowing);
+            message.success(isFollowing ? '已取消关注' : '已关注');
+            // 立即刷新数据
+            fetchProfileData();
+        } catch (error) {
+            console.error('关注操作失败:', error);
+            message.error('操作失败');
+        }
+    };
 
     const handleFriendAction = async () => {
         try {
@@ -421,6 +454,53 @@ const Profile = () => {
         }
     };
 
+    const handlePostClick = (post) => {
+        setSelectedPost(post);
+        setIsPostModalVisible(true);
+    };
+
+    // 6. useEffect 钩子
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            const decodedToken = jwtDecode(token);
+            setCurrentUserId(decodedToken.userId);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (profileData) {
+            fetchFollowData();
+        }
+    }, [fetchFollowData, profileData]);
+
+    useEffect(() => {
+        fetchProfileData();
+    }, [userId]);
+
+    // 7. 渲染逻辑
+    if (loading) {
+        return (
+            <ProfileContainer>
+                <div style={{ textAlign: 'center', padding: '50px' }}>
+                    <Spin size="large" tip="加载中..." />
+                </div>
+            </ProfileContainer>
+        );
+    }
+
+    if (!profileData) {
+        return (
+            <ProfileContainer>
+                <Empty
+                    description="未找到用户信"
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+            </ProfileContainer>
+        );
+    }
+
+    // 添加好友按钮渲染函数
     const renderFriendButton = () => {
         if (!userId) return null;
         
@@ -448,48 +528,6 @@ const Profile = () => {
         }
     };
 
-    const handlePostClick = (post) => {
-        setSelectedPost(post);
-        setIsPostModalVisible(true);
-    };
-
-    const handleFollow = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            await axios.post(
-                `http://localhost:5000/api/follow/${userId}`,
-                {},
-                { headers: { Authorization: `Bearer ${token}` }}
-            );
-            setIsFollowing(!isFollowing);
-            fetchProfileData(); // 刷新数据
-        } catch (error) {
-            message.error('操作失败');
-            console.error('关注操作失败:', error);
-        }
-    };
-
-    if (loading) {
-        return (
-            <ProfileContainer>
-                <div style={{ textAlign: 'center', padding: '50px' }}>
-                    <Spin size="large" tip="加载中..." />
-                </div>
-            </ProfileContainer>
-        );
-    }
-
-    if (!profileData) {
-        return (
-            <ProfileContainer>
-                <Empty
-                    description="未找到用户信"
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                />
-            </ProfileContainer>
-        );
-    }
-
     return (
         <ProfileContainer>
             <ProfileHeader>
@@ -516,37 +554,42 @@ const Profile = () => {
                         </Button>
                     ) : (
                         <Space>
-                            <Button 
-                                type={isFollowing ? 'default' : 'primary'}
-                                onClick={handleFollow}
-                            >
-                                {isFollowing ? '取消关注' : '关注'}
-                            </Button>
-                            {renderFriendButton()}
+                            {userId !== currentUserId && (
+                                <>
+                                    {renderFriendButton()}
+                                    <Button
+                                        type={isFollowing ? 'default' : 'primary'}
+                                        onClick={handleFollow}
+                                    >
+                                        {isFollowing ? '取消关注' : '关注'}
+                                    </Button>
+                                </>
+                            )}
                         </Space>
                     )}
 
                     <Stats>
-                        <StatItem>
+                        <StatItem onClick={() => setActiveTab('posts')}>
                             <strong>{posts?.length || 0}</strong> 帖子
                         </StatItem>
-                        <StatItem>
-                            <strong>{profileData?.friends?.length || 0}</strong> 好友
-                        </StatItem>
-                        <StatItem>
-                            <strong>{followers?.length || 0}</strong> 粉丝
-                        </StatItem>
-                        <StatItem>
-                            <strong>{following?.length || 0}</strong> 关注
-                        </StatItem>
+                        {canViewFollowers && (
+                            <StatItem onClick={() => setActiveTab('followers')}>
+                                <strong>{followers?.length || 0}</strong> 粉丝
+                            </StatItem>
+                        )}
+                        {canViewFollowing && (
+                            <StatItem onClick={() => setActiveTab('following')}>
+                                <strong>{following?.length || 0}</strong> 关注
+                            </StatItem>
+                        )}
                     </Stats>
 
                     <Bio>{profileData?.bio || '暂无简介'}</Bio>
                 </InfoSection>
             </ProfileHeader>
 
-            <Tabs defaultActiveKey="posts">
-                <TabPane tab="帖子" key="posts">
+            <Tabs activeKey={activeTab} onChange={setActiveTab}>
+                <TabPane tab={`帖子 ${posts?.length || 0}`} key="posts">
                     <PostGrid>
                         {posts.map(post => (
                             <PostItem key={post._id} onClick={() => handlePostClick(post)}>
@@ -588,22 +631,33 @@ const Profile = () => {
                         ))}
                     </PostGrid>
                 </TabPane>
-                <TabPane tab="粉丝" key="followers">
-                    <FollowList 
-                        users={followers}
-                        type="followers"
-                        onUpdate={fetchProfileData}
-                        currentUserId={currentUserId}
-                    />
-                </TabPane>
-                <TabPane tab="关注" key="following">
-                    <FollowList 
-                        users={following}
-                        type="following"
-                        onUpdate={fetchProfileData}
-                        currentUserId={currentUserId}
-                    />
-                </TabPane>
+                {canViewFollowers && (
+                    <TabPane tab={`粉丝 ${followers?.length || 0}`} key="followers">
+                        <FollowList 
+                            users={followers}
+                            type="followers"
+                            onUpdate={async () => {
+                                await fetchFollowData();
+                                await fetchProfileData();
+                            }}
+                            currentUserId={currentUserId}
+                            isOwnProfile={!userId || currentUserId === profileData?._id}
+                        />
+                    </TabPane>
+                )}
+                {canViewFollowing && (
+                    <TabPane tab={`关注 ${following?.length || 0}`} key="following">
+                        <FollowList 
+                            users={following}
+                            type="following"
+                            onUpdate={async () => {
+                                await fetchFollowData();
+                                await fetchProfileData();
+                            }}
+                            currentUserId={currentUserId}
+                        />
+                    </TabPane>
+                )}
             </Tabs>
 
             {/* 添加编辑个人资料模态框 */}

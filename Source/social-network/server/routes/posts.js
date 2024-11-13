@@ -38,7 +38,7 @@ const upload = multer({
     }
 }).single('image');
 
-// 获取当前用户的帖子
+// 获取当前用户的子
 router.get('/user/me', auth, async (req, res) => {
     try {
         const posts = await Post.find({ author: req.userId })
@@ -92,16 +92,79 @@ router.get('/user/:userId', auth, async (req, res) => {
     }
 });
 
-// 获取所有帖子
-router.get('/', auth, async (req, res) => {
+// 获取首页动态流
+router.get('/feed', auth, async (req, res) => {
     try {
-        const posts = await Post.find()
+        const currentUser = await User.findById(req.userId);
+        
+        // 获取所有帖子
+        let allPosts = await Post.find()
             .populate('author', 'username avatar')
+            .populate('comments.user', 'username avatar')
             .sort({ createdAt: -1 });
-        res.json(posts);
+
+        // 将帖子分为关注用户的帖子和其他帖子
+        const followingPosts = allPosts.filter(post => 
+            currentUser.following.includes(post.author._id) || 
+            post.author._id.toString() === req.userId
+        );
+        
+        const otherPosts = allPosts.filter(post => 
+            !currentUser.following.includes(post.author._id) && 
+            post.author._id.toString() !== req.userId
+        );
+
+        // 合并帖子列表，关注的用户的帖子在前面
+        const sortedPosts = [...followingPosts, ...otherPosts];
+
+        res.json(sortedPosts);
     } catch (error) {
-        console.error('获取帖子错误:', error);
-        res.status(500).json({ message: '服务器错误' });
+        console.error('获取动态流失败:', error);
+        res.status(500).json({ message: '获取动态流失败' });
+    }
+});
+
+// 可选：添加分页支持
+router.get('/feed/page/:page', auth, async (req, res) => {
+    try {
+        const page = parseInt(req.params.page) || 1;
+        const limit = 10; // 每页显示的帖子数
+        const currentUser = await User.findById(req.userId);
+        
+        // 获取所有帖子总数
+        const total = await Post.countDocuments();
+        
+        // 获取所有帖子并分页
+        let allPosts = await Post.find()
+            .populate('author', 'username avatar')
+            .populate('comments.user', 'username avatar')
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit);
+
+        // 将帖子分为关注用户的帖子和其他帖子
+        const followingPosts = allPosts.filter(post => 
+            currentUser.following.includes(post.author._id) || 
+            post.author._id.toString() === req.userId
+        );
+        
+        const otherPosts = allPosts.filter(post => 
+            !currentUser.following.includes(post.author._id) && 
+            post.author._id.toString() !== req.userId
+        );
+
+        // 合并帖子列表
+        const sortedPosts = [...followingPosts, ...otherPosts];
+
+        res.json({
+            posts: sortedPosts,
+            total,
+            currentPage: page,
+            totalPages: Math.ceil(total / limit)
+        });
+    } catch (error) {
+        console.error('获取动态流失败:', error);
+        res.status(500).json({ message: '获取动态流失败' });
     }
 });
 

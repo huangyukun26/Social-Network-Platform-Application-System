@@ -3,18 +3,14 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 
-// 关注用户
-router.post('/follow/:userId', auth, async (req, res) => {
+// 关注/取消关注用户
+router.post('/:userId', auth, async (req, res) => {
     try {
-        const userToFollow = await User.findById(req.params.userId);
         const currentUser = await User.findById(req.userId);
+        const userToFollow = await User.findById(req.params.userId);
 
-        if (!userToFollow || !currentUser) {
+        if (!userToFollow) {
             return res.status(404).json({ message: '用户不存在' });
-        }
-
-        if (userToFollow._id.toString() === currentUser._id.toString()) {
-            return res.status(400).json({ message: '不能关注自己' });
         }
 
         const isFollowing = currentUser.following.includes(userToFollow._id);
@@ -35,10 +31,15 @@ router.post('/follow/:userId', auth, async (req, res) => {
 
         await Promise.all([currentUser.save(), userToFollow.save()]);
 
+        // 返回更新后的完整数据
         res.json({
             isFollowing: !isFollowing,
             followersCount: userToFollow.followers.length,
-            followingCount: currentUser.following.length
+            followingCount: currentUser.following.length,
+            currentUser: {
+                following: currentUser.following,
+                followers: currentUser.followers
+            }
         });
     } catch (error) {
         console.error('关注操作失败:', error);
@@ -90,22 +91,53 @@ router.get('/:userId/followers', auth, async (req, res) => {
     }
 });
 
-// 添加获取关注状态的路由
+// 获取关注状态
 router.get('/status/:userId', auth, async (req, res) => {
     try {
         const currentUser = await User.findById(req.userId);
-        const targetUserId = req.params.userId;
-
-        if (!currentUser) {
-            return res.status(404).json({ message: '用户不存在' });
-        }
-
-        const isFollowing = currentUser.following.includes(targetUserId);
+        const isFollowing = currentUser.following.includes(req.params.userId);
         
         res.json({ isFollowing });
     } catch (error) {
         console.error('获取关注状态失败:', error);
         res.status(500).json({ message: '获取关注状态失败' });
+    }
+});
+
+// 移除粉丝
+router.delete('/remove-follower/:userId', auth, async (req, res) => {
+    try {
+        const currentUser = await User.findById(req.userId);
+        const followerToRemove = await User.findById(req.params.userId);
+
+        if (!currentUser || !followerToRemove) {
+            return res.status(404).json({ message: '用户不存在' });
+        }
+
+        // 从当前用户的粉丝列表中移除
+        currentUser.followers = currentUser.followers.filter(
+            id => id.toString() !== followerToRemove._id.toString()
+        );
+        
+        // 从粉丝的关注列表中移除当前用户
+        followerToRemove.following = followerToRemove.following.filter(
+            id => id.toString() !== currentUser._id.toString()
+        );
+
+        await Promise.all([
+            currentUser.save(),
+            followerToRemove.save()
+        ]);
+
+        // 返回更新后的数据
+        res.json({
+            message: '已移除粉丝',
+            followersCount: currentUser.followers.length,
+            followingCount: currentUser.following.length
+        });
+    } catch (error) {
+        console.error('移除粉丝失败:', error);
+        res.status(500).json({ message: '移除粉丝失败' });
     }
 });
 

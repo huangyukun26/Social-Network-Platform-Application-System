@@ -279,6 +279,15 @@ const SuggestionItem = styled.div`
     }
 `;
 
+// 添加新的样式组件
+const SuggestionsContainer = styled.div`
+  background: white;
+  border: 1px solid ${theme.colors.border};
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+`;
+
 const Home = () => {
     const [posts, setPosts] = useState([]);
     const [content, setContent] = useState('');
@@ -289,14 +298,33 @@ const Home = () => {
     const user = JSON.parse(localStorage.getItem('user'));
     const navigate = useNavigate();
     const [suggestions, setSuggestions] = useState([]);
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [initialLoading, setInitialLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
 
-    const fetchPosts = useCallback(async () => {
+    const fetchPosts = useCallback(async (pageNum = 1) => {
         try {
+            if (pageNum === 1) {
+                setInitialLoading(true);
+            } else {
+                setLoadingMore(true);
+            }
+
             const token = localStorage.getItem('token');
-            const response = await axios.get('http://localhost:5000/api/posts', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setPosts(response.data);
+            const response = await axios.get(
+                `http://localhost:5000/api/posts/feed/page/${pageNum}`,
+                { headers: { Authorization: `Bearer ${token}` }}
+            );
+            
+            if (pageNum === 1) {
+                setPosts(response.data.posts);
+            } else {
+                setPosts(prev => [...prev, ...response.data.posts]);
+            }
+            
+            setHasMore(pageNum < response.data.totalPages);
+            setPage(pageNum);
         } catch (error) {
             console.error('获取帖子失败:', error);
             if (error.response?.status === 401) {
@@ -307,11 +335,15 @@ const Home = () => {
                 message.error('获取帖子失败');
             }
         } finally {
-            setLoading(false);
+            if (pageNum === 1) {
+                setInitialLoading(false);
+            } else {
+                setLoadingMore(false);
+            }
         }
     }, [navigate]);
 
-    const fetchSuggestions = async () => {
+    const fetchSuggestions = useCallback(async () => {
         try {
             const token = localStorage.getItem('token');
             if (!token) {
@@ -319,7 +351,6 @@ const Home = () => {
                 return;
             }
 
-            console.log('开始获取推荐');
             const response = await axios.get('http://localhost:5000/api/friends/suggestions', {
                 headers: { 
                     Authorization: `Bearer ${token}`,
@@ -327,18 +358,19 @@ const Home = () => {
                 }
             });
 
-            console.log('获取到的推荐:', response.data);
             setSuggestions(response.data);
         } catch (error) {
             console.error('获取推荐失败:', error.response || error);
-            setSuggestions([]); // 出错时设置为空数组
-            message.error('获取推荐失败，请稍后重试');
+            setSuggestions([]); 
         }
-    };
+    }, []);
 
     useEffect(() => {
-        fetchPosts();
-        fetchSuggestions();
+        const init = async () => {
+            await fetchPosts(1);
+            await fetchSuggestions();
+        };
+        init();
     }, [fetchPosts, fetchSuggestions]);
 
     const handlePost = async () => {
@@ -452,7 +484,7 @@ const Home = () => {
                 [postId]: ''
             }));
 
-            message.success('评论成功');
+            message.success('评论功');
         } catch (error) {
             console.error('评论失败:', error);
             message.error('评论失败，请重试');
@@ -529,8 +561,24 @@ const Home = () => {
         }
     };
 
-    if (loading) {
-        return <Spin size="large" />;
+    // 添加加载更多功能
+    const loadMore = () => {
+        if (!loadingMore && hasMore) {
+            fetchPosts(page + 1);
+        }
+    };
+
+    if (initialLoading) {
+        return (
+            <div style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                alignItems: 'center', 
+                height: '100vh' 
+            }}>
+                <Spin size="large" />
+            </div>
+        );
     }
 
     return (
@@ -576,8 +624,19 @@ const Home = () => {
             <CreatePost onPostCreated={handlePostCreated} />
 
             <List
-                loading={loading}
                 dataSource={posts}
+                loadMore={
+                    hasMore && (
+                        <div style={{ textAlign: 'center', margin: '12px 0' }}>
+                            <Button 
+                                onClick={loadMore} 
+                                loading={loadingMore}
+                            >
+                                加载更多
+                            </Button>
+                        </div>
+                    )
+                }
                 locale={{
                     emptyText: <Empty description="暂无动态" />
                 }}

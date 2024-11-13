@@ -348,5 +348,29 @@ router.get('/:userId', auth, checkPrivacy, async (req, res) => {
     }
 });
 
+// 获取推荐关注用户
+router.get('/suggestions', auth, async (req, res) => {
+    try {
+        const currentUser = await User.findById(req.userId);
+        
+        // 获取未关注的用户(排除自己和已关注的用户)
+        const suggestions = await User.find({
+            _id: { 
+                $nin: [
+                    req.userId,
+                    ...currentUser.following
+                ]
+            }
+        })
+        .select('username avatar bio')
+        .limit(5); // 限制返回5个推荐
+
+        res.json(suggestions);
+    } catch (error) {
+        console.error('获取推荐用户失败:', error);
+        res.status(500).json({ message: '获取推荐用户失败' });
+    }
+});
+
 // 导出路由
 module.exports = router; 

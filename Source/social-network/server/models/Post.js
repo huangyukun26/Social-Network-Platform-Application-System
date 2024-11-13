@@ -31,9 +31,19 @@ const postSchema = new mongoose.Schema({
     savedBy: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
-    }]
+    }],
+    pushWeight: {
+        type: Number,
+        default: 1
+    }
 }, {
     timestamps: true
 });
+
+postSchema.methods.updatePushWeight = async function() {
+    const author = await mongoose.model('User').findById(this.author);
+    this.pushWeight = 1 + (author.followers.length * 0.1);
+    await this.save();
+};
 
 module.exports = mongoose.model('Post', postSchema); 
