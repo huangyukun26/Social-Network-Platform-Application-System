@@ -36,12 +36,28 @@ const userSchema = new mongoose.Schema({
     privacy: {
         profileVisibility: {
             type: String,
-            enum: ['public', 'private'],
+            enum: ['public', 'private', 'friends'],
             default: 'public'
         },
         showEmail: {
             type: Boolean,
             default: false
+        },
+        showFollowers: {
+            type: Boolean,
+            default: true
+        },
+        showFollowing: {
+            type: Boolean,
+            default: true
+        },
+        showPosts: {
+            type: Boolean,
+            default: true
+        },
+        allowTagging: {
+            type: Boolean,
+            default: true
         }
     },
     followers: [{

@@ -47,6 +47,42 @@ router.use((req, res, next) => {
     next();
 });
 
+// 添加登录失败次数限制
+const loginAttempts = new Map();
+
+// 添加隐私检查中间件
+const checkPrivacy = async (req, res, next) => {
+    try {
+        const targetUser = await User.findById(req.params.userId);
+        const requestingUser = req.userId; // 来自 auth 中间件
+
+        if (!targetUser) {
+            return res.status(404).json({ message: '用户不存在' });
+        }
+
+        // 如果是查看自己的资料，直接通过
+        if (targetUser._id.toString() === requestingUser) {
+            return next();
+        }
+
+        // 检查资料可见性
+        if (targetUser.privacy.profileVisibility === 'private') {
+            return res.status(403).json({ message: '该用户资料已设为私密' });
+        }
+
+        if (targetUser.privacy.profileVisibility === 'friends') {
+            const isFriend = targetUser.friends.includes(requestingUser);
+            if (!isFriend) {
+                return res.status(403).json({ message: '仅好友可见' });
+            }
+        }
+
+        next();
+    } catch (error) {
+        res.status(500).json({ message: '服务器错误' });
+    }
+};
+
 // 获取当前用户信息
 router.get('/me', auth, async (req, res) => {
     try {
@@ -76,8 +112,18 @@ router.get('/me', auth, async (req, res) => {
 // 登录路由
 router.post('/login', async (req, res) => {
     try {
+        const { email } = req.body;
+        
+        // 检查登录失败次数
+        const attempts = loginAttempts.get(email) || 0;
+        if (attempts >= 5) {
+            return res.status(429).json({ 
+                message: '登录失败次数过多，请15分钟后再试' 
+            });
+        }
+
         console.log('登录请求:', req.body);
-        const { email, password } = req.body;
+        const { password } = req.body;
 
         // 查找用户
         const user = await User.findOne({ email });
@@ -89,6 +135,14 @@ router.post('/login', async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
             return res.status(401).json({ message: '邮箱或密码错误' });
+        }
+
+        // 登录失败时记录
+        if (!isMatch) {
+            loginAttempts.set(email, attempts + 1);
+            setTimeout(() => loginAttempts.delete(email), 15 * 60 * 1000);
+        } else {
+            loginAttempts.delete(email);
         }
 
         // 生成 token
@@ -119,10 +173,30 @@ router.post('/login', async (req, res) => {
     }
 });
 
+// 添加密码强度验证
+const validatePassword = (password) => {
+    const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,}$/;
+    return regex.test(password);
+};
+
 // 注册路由
 router.post('/register', async (req, res) => {
     try {
         const { username, email, password } = req.body;
+
+        // 密码强度验证
+        if (!validatePassword(password)) {
+            return res.status(400).json({
+                message: '密码必须包含大小写字母和数字，且长度至少8位'
+            });
+        }
+
+        // 用户名格式验证
+        if (username.length < 3 || username.length > 20) {
+            return res.status(400).json({
+                message: '用户名长度必须在3-20个字符之间'
+            });
+        }
 
         // 检查用户是否已存在
         let user = await User.findOne({ $or: [{ email }, { username }] });
@@ -219,15 +293,15 @@ router.put('/profile', auth, upload.single('avatar'), async (req, res) => {
         res.json(user.toObject());
     } catch (error) {
         console.error('更新个人资料错误:', error);
-        res.status(500).json({ message: '更新失败' });
+        res.status(500).json({ message: '更新��败' });
     }
 });
 
 // 获取用户资料
-router.get('/:userId', auth, async (req, res) => {
+router.get('/:userId', auth, checkPrivacy, async (req, res) => {
     try {
         const userId = req.params.userId === 'me' ? req.userId : req.params.userId;
-        console.log('Getting profile for userId:', userId);
+        const requestingUser = req.userId;
 
         const user = await User.findById(userId)
             .select('-password')
@@ -235,8 +309,20 @@ router.get('/:userId', auth, async (req, res) => {
             .populate('posts')
             .lean();
 
-        if (!user) {
-            return res.status(404).json({ message: '用户不存在' });
+        // 根据隐私设置过滤数据
+        if (userId !== requestingUser) {
+            if (!user.privacy.showEmail) {
+                delete user.email;
+            }
+            if (!user.privacy.showFollowers) {
+                delete user.followers;
+            }
+            if (!user.privacy.showFollowing) {
+                delete user.following;
+            }
+            if (!user.privacy.showPosts) {
+                delete user.posts;
+            }
         }
 
         // 添加统计数据

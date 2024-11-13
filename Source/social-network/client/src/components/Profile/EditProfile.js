@@ -236,15 +236,34 @@ const EditProfile = ({ onSuccess }) => {
                     <Input />
                 </Form.Item>
 
-                <Form.Item label="主页可见性" name="profileVisibility">
-                    <Select>
-                        <Option value="public">公开</Option>
-                        <Option value="private">私密</Option>
-                    </Select>
-                </Form.Item>
-
-                <Form.Item label="显示邮箱" name="showEmail" valuePropName="checked">
-                    <Switch />
+                <Form.Item label="隐私设置">
+                    <Form.Item label="资料可见性" name={['privacy', 'profileVisibility']}>
+                        <Select>
+                            <Option value="public">公开</Option>
+                            <Option value="friends">仅好友可见</Option>
+                            <Option value="private">私密</Option>
+                        </Select>
+                    </Form.Item>
+                    
+                    <Form.Item label="显示邮箱" name={['privacy', 'showEmail']} valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                    
+                    <Form.Item label="显示关注者" name={['privacy', 'showFollowers']} valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                    
+                    <Form.Item label="显示正在关注" name={['privacy', 'showFollowing']} valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                    
+                    <Form.Item label="显示帖子" name={['privacy', 'showPosts']} valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                    
+                    <Form.Item label="允许被标记" name={['privacy', 'allowTagging']} valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
                 </Form.Item>
 
                 <Form.Item>
