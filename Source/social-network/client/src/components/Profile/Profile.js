@@ -99,22 +99,30 @@ const Overlay = styled.div`
 
 const PostModalWrapper = styled.div`
   display: flex;
-  height: 600px;
+  height: 80vh;
+  max-height: 750px;
   background: #fff;
 `;
 
 const PostImageSection = styled.div`
-  flex: 1;
+  flex: 2;
   background: ${props => props.textOnly ? '#f5f5f5' : '#000'};
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: ${props => props.textOnly ? '40px' : '0'};
+  position: relative;
+  overflow: hidden;
+  
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 `;
 
 const PostDetailsSection = styled.div`
-  width: 340px;
-  padding: 20px;
+  flex: 1;
+  width: 300px;
   border-left: 1px solid #dbdbdb;
   display: flex;
   flex-direction: column;
@@ -156,13 +164,23 @@ const TextPostOverlay = styled.div`
 `;
 
 const PostTextContent = styled.div`
-  font-size: 16px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  font-size: 18px;
   line-height: 1.6;
   color: #262626;
-  max-width: 80%;
+  background: #f5f5f5;
   text-align: center;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-y: auto;
 `;
 
 const EditProfileModal = styled(Modal)`
@@ -510,16 +528,16 @@ const Profile = () => {
 
                     <Stats>
                         <StatItem>
-                            <strong>{profileData?.stats?.postsCount || 0}</strong> 帖子
+                            <strong>{posts?.length || 0}</strong> 帖子
                         </StatItem>
                         <StatItem>
-                            <strong>{profileData?.stats?.friendsCount || 0}</strong> 好友
+                            <strong>{profileData?.friends?.length || 0}</strong> 好友
                         </StatItem>
                         <StatItem>
-                            <strong>{profileData?.followers?.length || 0}</strong> 粉丝
+                            <strong>{followers?.length || 0}</strong> 粉丝
                         </StatItem>
                         <StatItem>
-                            <strong>{profileData?.following?.length || 0}</strong> 关注
+                            <strong>{following?.length || 0}</strong> 关注
                         </StatItem>
                     </Stats>
 
@@ -613,10 +631,16 @@ const Profile = () => {
             <PostModal
                 visible={isPostModalVisible}
                 onCancel={() => setIsPostModalVisible(false)}
-                width={1000}
+                width="65%"
+                style={{ 
+                    maxWidth: '1100px',
+                    margin: '20px auto',
+                    padding: 0
+                }}
                 footer={null}
                 destroyOnClose
                 bodyStyle={{ padding: 0 }}
+                centered
             >
                 {selectedPost && (
                     <PostModalWrapper>
@@ -624,12 +648,11 @@ const Profile = () => {
                             {selectedPost.image ? (
                                 <img 
                                     src={`http://localhost:5000${selectedPost.image}`}
-                                    alt={selectedPost.description}
-                                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                                    alt={selectedPost.content}
                                 />
                             ) : (
                                 <PostTextContent>
-                                    {selectedPost.description}
+                                    {selectedPost.content}
                                 </PostTextContent>
                             )}
                         </PostImageSection>
@@ -640,21 +663,15 @@ const Profile = () => {
                                     src={profileData?.avatar ? `http://localhost:5000${profileData.avatar}` : null}
                                     icon={<UserOutlined />}
                                 />
-                                <span style={{ marginLeft: '12px', fontWeight: '500' }}>
-                                    {profileData?.username}
-                                </span>
+                                <span style={{ marginLeft: '10px' }}>{profileData?.username}</span>
                             </PostHeader>
                             <PostContent>
-                                <div style={{ 
-                                    padding: '12px 0', 
-                                    borderBottom: '1px solid #dbdbdb',
-                                    fontSize: '14px',
-                                    lineHeight: '1.5'
-                                }}>
-                                    <strong style={{ marginRight: '8px' }}>{profileData?.username}</strong>
-                                    {selectedPost.description}
-                                </div>
-                                {/* 这里可以添加评论列表等其他内容 */}
+                                {selectedPost.content && (
+                                    <div style={{ padding: '16px 0' }}>
+                                        {selectedPost.content}
+                                    </div>
+                                )}
+                                {/* 这里可以添加评论等其他内容 */}
                             </PostContent>
                         </PostDetailsSection>
                     </PostModalWrapper>
