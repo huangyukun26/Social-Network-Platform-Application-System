@@ -6,6 +6,7 @@ const auth = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const User = require('../models/User');
 
 // 确保上传目录存在
 const uploadDir = path.join(__dirname, '../uploads/posts');
@@ -55,6 +56,30 @@ router.get('/user/me', auth, async (req, res) => {
 // 获取指定用户的帖子
 router.get('/user/:userId', auth, async (req, res) => {
     try {
+        // 先获取目标用户信息
+        const targetUser = await User.findById(req.params.userId);
+        if (!targetUser) {
+            return res.status(404).json({ message: '用户不存在' });
+        }
+
+        // 检查隐私设置
+        if (req.params.userId !== req.userId) { // 如果不是查看自己的帖子
+            if (targetUser.privacy.profileVisibility === 'private') {
+                return res.json([]); // 返回空数组
+            }
+
+            if (targetUser.privacy.profileVisibility === 'friends') {
+                const isFriend = targetUser.friends.includes(req.userId);
+                if (!isFriend) {
+                    return res.json([]); // 返回空数组
+                }
+            }
+
+            if (!targetUser.privacy.showPosts) {
+                return res.json([]); // 返回空数组
+            }
+        }
+
         const posts = await Post.find({ author: req.params.userId })
             .sort({ createdAt: -1 })
             .populate('author', 'username avatar')

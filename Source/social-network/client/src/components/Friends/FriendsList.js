@@ -124,43 +124,90 @@ const FriendsList = ({ friends, onUpdate }) => {
         setIsModalVisible(false);
     };
 
+    const renderFriendInfo = (friend) => {
+        // 好友应该始终可以看到基本信息
+        const displayInfo = {
+            _id: friend._id,
+            username: friend.username,
+            avatar: friend.avatar,
+            bio: friend.bio || '这个人很懒，什么都没写~',
+            statistics: {
+                // 根据隐私设置显示统计信息
+                postsCount: friend.privacy?.showPosts ? friend.statistics?.postsCount : '-',
+                friendsCount: friend.privacy?.showFollowers ? friend.statistics?.friendsCount : '-',
+                likesCount: friend.statistics?.likesCount || 0
+            }
+        };
+
+        // 如果是私密账户，添加提示
+        if (friend.privacy?.profileVisibility === 'private') {
+            displayInfo.isPrivate = true;
+            displayInfo.privateNote = '该用户已设为私密账户';
+        }
+
+        return displayInfo;
+    };
+
     return (
         <>
             <List
                 dataSource={friends}
-                renderItem={friend => (
-                    <FriendItem
-                        actions={[
-                            <Button danger onClick={() => handleRemoveFriend(friend._id)}>
-                                删除好友
-                            </Button>
-                        ]}
-                        onClick={() => handleFriendClick(friend)}
-                        style={{ cursor: 'pointer' }}
-                    >
-                        <List.Item.Meta
-                            avatar={
-                                <StyledAvatar 
-                                    src={getFullAvatarUrl(friend.avatar)} 
-                                    icon={<UserOutlined />}
-                                />
-                            }
-                            title={friend.username}
-                            description={
-                                <div>
-                                    <div>{friend.bio || '这个人很懒，什么都没写~'}</div>
-                                    {friend.location && <div>📍 {friend.location}</div>}
-                                </div>
-                            }
-                        />
-                    </FriendItem>
-                )}
+                renderItem={friend => {
+                    const displayInfo = renderFriendInfo(friend);
+                    return (
+                        <FriendItem
+                            actions={[
+                                <Button 
+                                    danger
+                                    onClick={() => handleRemoveFriend(friend._id)}
+                                >
+                                    删除好友
+                                </Button>
+                            ]}
+                        >
+                            <List.Item.Meta
+                                avatar={
+                                    <StyledAvatar 
+                                        src={getFullAvatarUrl(friend.avatar)}
+                                        icon={<UserOutlined />}
+                                        onClick={() => handleFriendClick(friend)}
+                                    />
+                                }
+                                title={
+                                    <Link to={`/profile/${friend._id}`}>
+                                        {friend.username}
+                                        {friend.privacy?.profileVisibility === 'private' && 
+                                            <span style={{ marginLeft: 8, color: '#8e8e8e', fontSize: 12 }}>
+                                                (私密账户)
+                                            </span>
+                                        }
+                                    </Link>
+                                }
+                                description={
+                                    <div>
+                                        <div>{displayInfo.bio}</div>
+                                        <div style={{ marginTop: 8, color: '#8e8e8e', fontSize: 12 }}>
+                                            {displayInfo.statistics.postsCount} 帖子 · 
+                                            {displayInfo.statistics.friendsCount} 好友 · 
+                                            {displayInfo.statistics.likesCount} 获赞
+                                        </div>
+                                    </div>
+                                }
+                            />
+                        </FriendItem>
+                    );
+                }}
+                locale={{ emptyText: '暂无好友' }}
             />
 
             <Modal
                 visible={isModalVisible}
                 onCancel={() => setIsModalVisible(false)}
-                footer={null}
+                footer={[
+                    <Button key="view" type="primary" onClick={handleViewFullProfile}>
+                        查看完整主页
+                    </Button>
+                ]}
                 width={900}
                 style={{ top: 20 }}
                 bodyStyle={{ padding: 0 }}
@@ -176,34 +223,29 @@ const FriendsList = ({ friends, onUpdate }) => {
                         </div>
                         <ProfileInfo>
                             <ProfileHeader>
-                                <Avatar 
-                                    src={getFullAvatarUrl(selectedFriend.avatar)} 
-                                    icon={<UserOutlined />}
-                                    size={64}
-                                />
-                                <div>
-                                    <h2 style={{ margin: 0 }}>{selectedFriend.username}</h2>
-                                    <Button type="link" onClick={handleViewFullProfile}>
-                                        查看完整主页
-                                    </Button>
-                                </div>
+                                <h2>{selectedFriend.username}</h2>
+                                {selectedFriend.isPrivate && (
+                                    <div style={{ color: '#8e8e8e', fontSize: '14px' }}>
+                                        {selectedFriend.privateNote}
+                                    </div>
+                                )}
                             </ProfileHeader>
                             <ProfileStats>
                                 <StatItem>
                                     <div className="number">
-                                        {selectedFriend.statistics?.postsCount || 0}
+                                        {selectedFriend.statistics.postsCount}
                                     </div>
                                     <div className="label">帖子</div>
                                 </StatItem>
                                 <StatItem>
                                     <div className="number">
-                                        {selectedFriend.statistics?.friendsCount || 0}
+                                        {selectedFriend.statistics.friendsCount}
                                     </div>
                                     <div className="label">好友</div>
                                 </StatItem>
                                 <StatItem>
                                     <div className="number">
-                                        {selectedFriend.statistics?.likesCount || 0}
+                                        {selectedFriend.statistics.likesCount}
                                     </div>
                                     <div className="label">获赞</div>
                                 </StatItem>

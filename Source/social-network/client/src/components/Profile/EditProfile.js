@@ -28,6 +28,7 @@ const EditProfile = ({ onSuccess }) => {
     const [profileData, setProfileData] = useState(null);
     const [imageUrl, setImageUrl] = useState(null);
     const [form] = Form.useForm();
+    const [isPrivate, setIsPrivate] = useState(false);
 
     // 获取用户资料
     useEffect(() => {
@@ -45,24 +46,25 @@ const EditProfile = ({ onSuccess }) => {
 
                 const userData = response.data;
                 setProfileData(userData);
+                setIsPrivate(userData.privacy?.profileVisibility === 'private');
                 
-                // 设置头像URL
-                if (userData.avatar) {
-                    setImageUrl(`http://localhost:5000${userData.avatar}`);
-                }
-
                 // 设置表单初始值
                 form.setFieldsValue({
                     username: userData.username,
                     bio: userData.bio,
                     website: userData.website,
-                    profileVisibility: userData.privacy?.profileVisibility || 'public',
-                    showEmail: userData.privacy?.showEmail || false
+                    privacy: {
+                        profileVisibility: userData.privacy?.profileVisibility,
+                        showEmail: userData.privacy?.showEmail,
+                        showFollowers: userData.privacy?.showFollowers,
+                        showFollowing: userData.privacy?.showFollowing,
+                        showPosts: userData.privacy?.showPosts,
+                        allowTagging: userData.privacy?.allowTagging
+                    }
                 });
             } catch (error) {
                 console.error('获取用户资料失败:', error);
                 message.error('获取用户资料失败');
-                navigate('/profile');
             }
         };
 
@@ -124,25 +126,37 @@ const EditProfile = ({ onSuccess }) => {
             const token = localStorage.getItem('token');
             const formData = new FormData();
             
-            // 检查是否有新的头像文件
+            // 添加基本信息
+            formData.append('username', values.username);
+            formData.append('bio', values.bio || '');
+            formData.append('website', values.website || '');
+
+            // 处理头像
             const avatarField = form.getFieldValue('avatar');
             if (avatarField?.fileList?.[0]?.originFileObj) {
                 formData.append('avatar', avatarField.fileList[0].originFileObj);
             }
+
+            // 处理隐私设置 - 使用 JSON 字符串传递整个隐私对象
+            const privacySettings = {
+                profileVisibility: values.privacy?.profileVisibility || 'public',
+                showEmail: values.privacy?.showEmail || false,
+                showFollowers: values.privacy?.showFollowers || false,
+                showFollowing: values.privacy?.showFollowing || false,
+                showPosts: values.privacy?.showPosts || false,
+                allowTagging: values.privacy?.allowTagging || false
+            };
             
-            // 添加其他字段
-            Object.keys(values).forEach(key => {
-                if (values[key] !== undefined && key !== 'avatar') {
-                    formData.append(key, values[key]);
-                }
-            });
+            formData.append('privacySettings', JSON.stringify(privacySettings));
+
+            console.log('提交的隐私设置:', privacySettings);
 
             const response = await axios.put(
                 'http://localhost:5000/api/users/profile',
                 formData,
                 {
                     headers: {
-                        'Authorization': `Bearer ${token}`,
+                        Authorization: `Bearer ${token}`,
                         'Content-Type': 'multipart/form-data'
                     }
                 }
@@ -150,7 +164,14 @@ const EditProfile = ({ onSuccess }) => {
 
             if (response.data) {
                 message.success('个人资料更新成功');
-                onSuccess?.();
+                // 更新表单数据
+                form.setFieldsValue({
+                    ...response.data,
+                    privacy: response.data.privacy
+                });
+                if (onSuccess) {
+                    onSuccess(response.data);
+                }
             }
         } catch (error) {
             console.error('更新个人资料失败:', error);
@@ -158,6 +179,23 @@ const EditProfile = ({ onSuccess }) => {
         } finally {
             setLoading(false);
             message.destroy();
+        }
+    };
+
+    const handleVisibilityChange = (value) => {
+        setIsPrivate(value === 'private');
+        if (value === 'private') {
+            // 如果设置为私密，重置其他隐私选项
+            form.setFieldsValue({
+                privacy: {
+                    profileVisibility: 'private',
+                    showEmail: false,
+                    showFollowers: false,
+                    showFollowing: false,
+                    showPosts: false,
+                    allowTagging: false
+                }
+            });
         }
     };
 
@@ -171,6 +209,16 @@ const EditProfile = ({ onSuccess }) => {
                 form={form}
                 onFinish={handleSubmit}
                 layout="vertical"
+                initialValues={{
+                    privacy: {
+                        profileVisibility: 'public',
+                        showEmail: false,
+                        showFollowers: true,
+                        showFollowing: true,
+                        showPosts: true,
+                        allowTagging: true
+                    }
+                }}
             >
                 <Form.Item
                     label="头像"
@@ -237,33 +285,60 @@ const EditProfile = ({ onSuccess }) => {
                 </Form.Item>
 
                 <Form.Item label="隐私设置">
-                    <Form.Item label="资料可见性" name={['privacy', 'profileVisibility']}>
-                        <Select>
+                    <Form.Item 
+                        label="资料可见性" 
+                        name={['privacy', 'profileVisibility']}
+                    >
+                        <Select onChange={handleVisibilityChange}>
                             <Option value="public">公开</Option>
                             <Option value="friends">仅好友可见</Option>
                             <Option value="private">私密</Option>
                         </Select>
                     </Form.Item>
                     
-                    <Form.Item label="显示邮箱" name={['privacy', 'showEmail']} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    
-                    <Form.Item label="显示关注者" name={['privacy', 'showFollowers']} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    
-                    <Form.Item label="显示正在关注" name={['privacy', 'showFollowing']} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    
-                    <Form.Item label="显示帖子" name={['privacy', 'showPosts']} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    
-                    <Form.Item label="允许被标记" name={['privacy', 'allowTagging']} valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
+                    {!isPrivate && (
+                        <>
+                            <Form.Item 
+                                label="显示邮箱" 
+                                name={['privacy', 'showEmail']} 
+                                valuePropName="checked"
+                            >
+                                <Switch />
+                            </Form.Item>
+                            
+                            <Form.Item 
+                                label="显示关注者" 
+                                name={['privacy', 'showFollowers']} 
+                                valuePropName="checked"
+                            >
+                                <Switch />
+                            </Form.Item>
+                            
+                            <Form.Item 
+                                label="显示正在关注" 
+                                name={['privacy', 'showFollowing']} 
+                                valuePropName="checked"
+                            >
+                                <Switch />
+                            </Form.Item>
+                            
+                            <Form.Item 
+                                label="显示帖子" 
+                                name={['privacy', 'showPosts']} 
+                                valuePropName="checked"
+                            >
+                                <Switch />
+                            </Form.Item>
+                            
+                            <Form.Item 
+                                label="允许被标记" 
+                                name={['privacy', 'allowTagging']} 
+                                valuePropName="checked"
+                            >
+                                <Switch />
+                            </Form.Item>
+                        </>
+                    )}
                 </Form.Item>
 
                 <Form.Item>

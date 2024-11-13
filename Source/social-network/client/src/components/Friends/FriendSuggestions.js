@@ -81,6 +81,52 @@ const FriendSuggestions = ({ onUpdate }) => {
         }
     };
 
+    const renderUserInfo = (user) => {
+        const displayInfo = {
+            _id: user._id,
+            username: user.username,
+            avatar: user.avatar,
+            bio: user.privacy?.profileVisibility === 'private' 
+                ? '这是一个私密账户'
+                : (user.bio || '这个人很懒，什么都没写~'),
+            statistics: user.privacy?.profileVisibility === 'private'
+                ? null
+                : user.statistics
+        };
+
+        return (
+            <List.Item.Meta
+                avatar={
+                    <StyledAvatar 
+                        src={user.avatar ? `http://localhost:5000${user.avatar}` : null} 
+                        icon={!user.avatar && <UserOutlined />}
+                    />
+                }
+                title={
+                    <span>
+                        {user.username}
+                        {user.privacy?.profileVisibility === 'private' && 
+                            <span style={{ marginLeft: 8, color: '#8e8e8e', fontSize: 12 }}>
+                                (私密账户)
+                            </span>
+                        }
+                    </span>
+                }
+                description={
+                    <div>
+                        <div>{displayInfo.bio}</div>
+                        {displayInfo.statistics && (
+                            <div style={{ marginTop: 8, color: '#8e8e8e', fontSize: 12 }}>
+                                {displayInfo.statistics.postsCount} 帖子 · 
+                                {displayInfo.statistics.friendsCount} 好友
+                            </div>
+                        )}
+                    </div>
+                }
+            />
+        );
+    };
+
     if (loading) {
         return (
             <div style={{ textAlign: 'center', padding: '20px' }}>
@@ -113,25 +159,7 @@ const FriendSuggestions = ({ onUpdate }) => {
                         </Button>
                     ]}
                 >
-                    <List.Item.Meta
-                        avatar={
-                            <StyledAvatar 
-                                src={user.avatar ? `http://localhost:5000${user.avatar}` : null} 
-                                icon={!user.avatar && <UserOutlined />}
-                            />
-                        }
-                        title={user.username}
-                        description={
-                            <div>
-                                <div>{user.bio || '这个人很懒，什么都没写~'}</div>
-                                {user.statistics && (
-                                    <div style={{ marginTop: 8, color: '#8e8e8e', fontSize: 12 }}>
-                                        {user.statistics.postsCount} 帖子 · {user.statistics.friendsCount} 好友
-                                    </div>
-                                )}
-                            </div>
-                        }
-                    />
+                    {renderUserInfo(user)}
                 </List.Item>
             )}
         />

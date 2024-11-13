@@ -244,10 +244,6 @@ router.post('/register', async (req, res) => {
 // 更新个人资料
 router.put('/profile', auth, upload.single('avatar'), async (req, res) => {
     try {
-        console.log('收到请求头:', req.headers);
-        console.log('收到文件:', req.file);
-        console.log('收到表单数据:', req.body);
-
         const user = await User.findById(req.userId);
         if (!user) {
             return res.status(404).json({ message: '用户不存在' });
@@ -273,27 +269,40 @@ router.put('/profile', auth, upload.single('avatar'), async (req, res) => {
             user.avatar = avatarPath;
         }
 
-        // 更新其他字段
-        const allowedUpdates = ['username', 'bio', 'website', 'profileVisibility', 'showEmail'];
-        allowedUpdates.forEach(field => {
+        // 更新基本信息
+        ['username', 'bio', 'website'].forEach(field => {
             if (req.body[field] !== undefined) {
-                if (field === 'profileVisibility') {
-                    user.privacy.profileVisibility = req.body[field];
-                } else if (field === 'showEmail') {
-                    user.privacy.showEmail = req.body[field] === 'true';
-                } else {
-                    user[field] = req.body[field];
-                }
+                user[field] = req.body[field];
             }
         });
 
+        // 更新隐私设置
+        if (req.body.privacySettings) {
+            try {
+                const privacySettings = JSON.parse(req.body.privacySettings);
+                user.privacy = {
+                    ...user.privacy,
+                    ...privacySettings
+                };
+                console.log('解析后的隐私设置:', privacySettings);
+            } catch (error) {
+                console.error('解析隐私设置失败:', error);
+            }
+        }
+
+        console.log('更新前的用户数据:', user.toObject());
         await user.save();
-        console.log('更新后的用户信息:', user.toObject());
-        
-        res.json(user.toObject());
+        console.log('更新后的用户数据:', user.toObject());
+
+        // 返回更新后的用户数据
+        const updatedUser = await User.findById(user._id)
+            .select('-password')
+            .lean();
+
+        res.json(updatedUser);
     } catch (error) {
         console.error('更新个人资料错误:', error);
-        res.status(500).json({ message: '更新��败' });
+        res.status(500).json({ message: '更新失败' });
     }
 });
 

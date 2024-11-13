@@ -156,22 +156,41 @@ const friendController = {
                 _id: { 
                     $ne: req.userId,
                     $nin: [...friendIds, ...pendingUserIds]
-                }
+                },
+                'privacy.profileVisibility': { $ne: 'private' }
             })
             .populate('posts')
             .populate('friends')
-            .select('username avatar bio posts friends likesReceived')
+            .select('username avatar bio posts friends likesReceived privacy')
             .limit(5);
 
-            // 为每个推荐用户添加统计信息
-            const suggestionsWithStats = suggestions.map(user => ({
-                ...user.toObject(),
-                statistics: {
-                    postsCount: user.posts ? user.posts.length : 0,
-                    friendsCount: user.friends ? user.friends.length : 0,
-                    likesCount: user.likesReceived || 0
+            // 过滤掉私密信息
+            const suggestionsWithStats = suggestions.map(user => {
+                const userData = user.toObject();
+                // 如果不是好友且设置为仅好友可见，则过滤信息
+                if (userData.privacy.profileVisibility === 'friends' && 
+                    !friendIds.includes(userData._id)) {
+                    return {
+                        _id: userData._id,
+                        username: userData.username,
+                        avatar: userData.avatar,
+                        bio: '仅好友可见',
+                        statistics: {
+                            postsCount: '-',
+                            friendsCount: '-',
+                            likesCount: '-'
+                        }
+                    };
                 }
-            }));
+                return {
+                    ...userData,
+                    statistics: {
+                        postsCount: userData.privacy.showPosts ? (userData.posts?.length || 0) : '-',
+                        friendsCount: userData.privacy.showFollowers ? (userData.friends?.length || 0) : '-',
+                        likesCount: userData.likesReceived || 0
+                    }
+                };
+            });
 
             console.log('找到的推荐用户数量:', suggestionsWithStats.length);
             res.json(suggestionsWithStats);

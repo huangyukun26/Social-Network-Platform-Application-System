@@ -233,29 +233,74 @@ const Profile = () => {
                 return;
             }
 
-            console.log('Fetching profile for userId:', userId || 'me');
-
-            const profileResponse = await axios.get(
-                `http://localhost:5000/api/users/${userId || 'me'}`,
-                { headers: { Authorization: `Bearer ${token}` }}
-            );
-
-            console.log('Profile response:', profileResponse.data);
-            setProfileData(profileResponse.data);
-
-            const postsResponse = await axios.get(
-                `http://localhost:5000/api/posts/user/${userId || profileResponse.data._id}`,
-                { headers: { Authorization: `Bearer ${token}` }}
-            );
-
-            setPosts(postsResponse.data);
-
+            // 获取好友状态
+            let friendStatus = 'none';
             if (userId) {
-                fetchFriendshipStatus();
+                try {
+                    const statusResponse = await axios.get(
+                        `http://localhost:5000/api/friends/status/${userId}`,
+                        { headers: { Authorization: `Bearer ${token}` }}
+                    );
+                    friendStatus = statusResponse.data.status;
+                } catch (error) {
+                    // 如果获取好友状态失败，默认为非好友
+                    console.log('获取好友状态失败:', error);
+                    friendStatus = 'none';
+                }
             }
+
+            try {
+                const profileResponse = await axios.get(
+                    `http://localhost:5000/api/users/${userId || 'me'}`,
+                    { headers: { Authorization: `Bearer ${token}` }}
+                );
+                
+                const userData = profileResponse.data;
+                setProfileData(userData);
+
+                // 如果是公开用户或者是好友，获取帖子
+                if (!userId || friendStatus === 'friends' || userData.privacy?.profileVisibility === 'public') {
+                    try {
+                        const postsResponse = await axios.get(
+                            `http://localhost:5000/api/posts/user/${userId || userData._id}`,
+                            { headers: { Authorization: `Bearer ${token}` }}
+                        );
+                        setPosts(postsResponse.data);
+                    } catch (error) {
+                        console.log('获取帖子失败:', error);
+                        setPosts([]);
+                    }
+                } else {
+                    setPosts([]);
+                }
+
+            } catch (error) {
+                // 处理 403 错误，显示有限信息
+                if (error.response && error.response.status === 403) {
+                    const limitedData = error.response.data.limitedInfo || {
+                        _id: userId,
+                        username: '私密用户',
+                        avatar: null,
+                        bio: '该用户资料已设为私密',
+                        privacy: {
+                            profileVisibility: 'private'
+                        },
+                        statistics: {
+                            postsCount: '-',
+                            friendsCount: '-'
+                        }
+                    };
+                    setProfileData(limitedData);
+                    setPosts([]);
+                } else {
+                    console.error('获取个人资料失败:', error);
+                    message.error('获取个人资料失败');
+                }
+            }
+
         } catch (error) {
-            console.error('获取个人资料失败:', error);
-            message.error('获取个人资料失败');
+            console.error('获取数据失败:', error);
+            message.error('获取数据失败');
         } finally {
             setLoading(false);
         }
@@ -352,23 +397,23 @@ const Profile = () => {
                 <InfoSection>
                     <Username>{profileData?.username}</Username>
                     <Stats>
-                        <StatItem>
-                            <span>{posts.length}</span> 帖子
-                        </StatItem>
-                        {isOwnProfile ? (
-                            <Dropdown overlay={friendsMenu} trigger={['click']}>
-                                <StatItem>
-                                    <span>{profileData?.friends?.length || 0}</span> 好友
-                                </StatItem>
-                            </Dropdown>
-                        ) : (
+                        {(isOwnProfile || profileData?.privacy?.showPosts) && (
+                            <StatItem>
+                                <span>{posts.length}</span> 帖子
+                            </StatItem>
+                        )}
+                        
+                        {(isOwnProfile || profileData?.privacy?.showFollowers) && (
                             <StatItem>
                                 <span>{profileData?.friends?.length || 0}</span> 好友
                             </StatItem>
                         )}
-                        <StatItem>
-                            <span>{profileData?.likes || 0}</span> 获赞
-                        </StatItem>
+                        
+                        {(isOwnProfile || profileData?.privacy?.showEmail) && (
+                            <StatItem>
+                                <span>{profileData?.email}</span>
+                            </StatItem>
+                        )}
                     </Stats>
                     <Bio>{profileData?.bio || '这个人很懒，什么都没写~'}</Bio>
                     {isOwnProfile ? (
@@ -386,40 +431,42 @@ const Profile = () => {
             </ProfileHeader>
 
             {/* 帖子展示部分 */}
-            <PostGrid>
-                {posts.map((post) => (
-                    <PostItem key={post._id} onClick={() => handlePostClick(post)}>
-                        {post.image ? (
-                            <>
-                                <PostImage 
-                                    src={`http://localhost:5000${post.image}`} 
-                                    alt={post.content}
-                                    onError={(e) => {
-                                        e.target.onerror = null;
-                                        e.target.style.display = 'none';
-                                        e.target.parentElement.querySelector('.placeholder').style.display = 'flex';
-                                    }}
-                                />
-                                <PlaceholderWrapper className="placeholder" style={{ display: 'none' }}>
+            {(isOwnProfile || profileData?.privacy?.showPosts) && (
+                <PostGrid>
+                    {posts.map((post) => (
+                        <PostItem key={post._id} onClick={() => handlePostClick(post)}>
+                            {post.image ? (
+                                <>
+                                    <PostImage 
+                                        src={`http://localhost:5000${post.image}`} 
+                                        alt={post.content}
+                                        onError={(e) => {
+                                            e.target.onerror = null;
+                                            e.target.style.display = 'none';
+                                            e.target.parentElement.querySelector('.placeholder').style.display = 'flex';
+                                        }}
+                                    />
+                                    <PlaceholderWrapper className="placeholder" style={{ display: 'none' }}>
+                                        <PictureOutlined />
+                                        <span>图片加载失败</span>
+                                    </PlaceholderWrapper>
+                                    <Overlay className="overlay">
+                                        <div style={{ textAlign: 'center', color: 'white' }}>
+                                            <div>❤️ {post.likes?.length || 0}</div>
+                                            <div>💬 {post.comments?.length || 0}</div>
+                                        </div>
+                                    </Overlay>
+                                </>
+                            ) : (
+                                <PlaceholderWrapper>
                                     <PictureOutlined />
-                                    <span>图片加载失败</span>
+                                    <span>{post.content || '无图片内容'}</span>
                                 </PlaceholderWrapper>
-                                <Overlay className="overlay">
-                                    <div style={{ textAlign: 'center', color: 'white' }}>
-                                        <div>❤️ {post.likes?.length || 0}</div>
-                                        <div>💬 {post.comments?.length || 0}</div>
-                                    </div>
-                                </Overlay>
-                            </>
-                        ) : (
-                            <PlaceholderWrapper>
-                                <PictureOutlined />
-                                <span>{post.content || '无图片内容'}</span>
-                            </PlaceholderWrapper>
-                        )}
-                    </PostItem>
-                ))}
-            </PostGrid>
+                            )}
+                        </PostItem>
+                    ))}
+                </PostGrid>
+            )}
 
             {/* Instagram 风格的帖子预览弹窗 */}
             <Modal
