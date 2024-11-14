@@ -320,6 +320,34 @@ const Profile = () => {
             const userData = profileResponse.data;
             setProfileData(userData);
 
+            // 检查是否已经是好友
+            if (userId && userId !== currentUserId) {
+                const currentUserResponse = await axios.get(
+                    'http://localhost:5000/api/users/me',
+                    { headers: { Authorization: `Bearer ${token}` }}
+                );
+                
+                const isFriend = currentUserResponse.data.friends.includes(userId);
+                if (isFriend) {
+                    setFriendshipStatus('friends');
+                } else {
+                    // 如果不是好友，再检查是否有待处理的请求
+                    try {
+                        const statusResponse = await axios.get(
+                            `http://localhost:5000/api/friends/status/${userId}`,
+                            { headers: { Authorization: `Bearer ${token}` }}
+                        );
+                        setFriendshipStatus(statusResponse.data.status);
+                        if (statusResponse.data.direction === 'received') {
+                            setFriendshipStatus('received');
+                        }
+                    } catch (error) {
+                        console.log('获取好友状态失败:', error);
+                        setFriendshipStatus('none');
+                    }
+                }
+            }
+
             // 获取帖子（如果是公开用户或者自己的主页）
             if (!userId || userData.privacy?.profileVisibility === 'public' || 
                 userData._id === currentUserId || friendshipStatus === 'friends') {
@@ -363,6 +391,9 @@ const Profile = () => {
                         { headers: { Authorization: `Bearer ${token}` }}
                     );
                     setFriendshipStatus(statusResponse.data.status);
+                    if (statusResponse.data.direction === 'received') {
+                        setFriendshipStatus('received');
+                    }
                 } catch (error) {
                     console.log('获取好友状态失败:', error);
                     setFriendshipStatus('none');
@@ -448,6 +479,8 @@ const Profile = () => {
                 setFriendshipStatus('none');
                 message.success('已删除好友');
             }
+            // 刷新数据
+            fetchProfileData();
         } catch (error) {
             console.error('好友操作失败:', error);
             message.error('操作失败');
@@ -502,7 +535,7 @@ const Profile = () => {
 
     // 添加好友按钮渲染函数
     const renderFriendButton = () => {
-        if (!userId) return null;
+        if (!userId || userId === currentUserId) return null;
         
         switch (friendshipStatus) {
             case 'none':
@@ -520,7 +553,13 @@ const Profile = () => {
             case 'friends':
                 return (
                     <Button onClick={handleFriendAction}>
-                        已是好友
+                        删除好友
+                    </Button>
+                );
+            case 'received':
+                return (
+                    <Button type="primary">
+                        接受请求
                     </Button>
                 );
             default:

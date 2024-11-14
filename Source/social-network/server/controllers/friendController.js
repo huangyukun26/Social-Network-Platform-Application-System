@@ -197,7 +197,7 @@ const friendController = {
         } catch (error) {
             console.error('获取好友推荐失败:', error);
             res.status(500).json({ 
-                message: '获取好友推荐失败',
+                message: '获取好友推���败',
                 error: error.message 
             });
         }
@@ -262,13 +262,17 @@ const friendController = {
                 return res.json({ status: 'self' });
             }
 
-            // 检查是否已经是好友
-            const user = await User.findById(req.userId);
-            if (user.friends.includes(userId)) {
+            // 先检查是否已经是好友
+            const currentUser = await User.findById(req.userId);
+            const isFriend = currentUser.friends.some(
+                friendId => friendId.toString() === userId
+            );
+            
+            if (isFriend) {
                 return res.json({ status: 'friends' });
             }
             
-            // 检查是否有待处理的好友请求
+            // 如果不是好友，检查是否有待处理的请求
             const pendingRequest = await FriendRequest.findOne({
                 $or: [
                     { sender: req.userId, receiver: userId },
@@ -278,14 +282,18 @@ const friendController = {
             });
             
             if (pendingRequest) {
+                const direction = pendingRequest.sender.toString() === req.userId 
+                    ? 'sent' 
+                    : 'received';
                 return res.json({ 
                     status: 'pending',
-                    direction: pendingRequest.sender.toString() === req.userId ? 'sent' : 'received'
+                    direction: direction
                 });
             }
             
             res.json({ status: 'none' });
         } catch (error) {
+            console.error('获取好友状态失败:', error);
             res.status(500).json({ message: '获取好友状态失败' });
         }
     },
