@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import FriendRequest from './FriendRequest';
 import FriendsList from './FriendsList';
 import FriendSuggestions from './FriendSuggestions';
+import UserSearch from './UserSearch';
 import axios from 'axios';
 
 const { TabPane } = Tabs;
@@ -57,6 +58,9 @@ const Friends = () => {
   return (
     <FriendsContainer>
       <Tabs activeKey={activeTab} onChange={setActiveTab}>
+        <TabPane tab="搜索用户" key="0">
+          <UserSearch onUpdate={fetchFriendData} />
+        </TabPane>
         <TabPane tab="好友请求" key="1">
           <FriendRequest 
             requests={friendRequests} 

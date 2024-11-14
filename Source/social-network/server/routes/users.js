@@ -83,7 +83,55 @@ const checkPrivacy = async (req, res, next) => {
     }
 };
 
-// 获取当前用户信息
+// 1. 先定义搜索路由
+router.get('/search', auth, async (req, res) => {
+    try {
+        const { query } = req.query;
+        if (!query) {
+            return res.json([]);
+        }
+
+        // 获取当前用户信息，包括好友列表
+        const currentUser = await User.findById(req.userId)
+            .select('friends');
+
+        const users = await User.find({
+            $and: [
+                { _id: { $ne: req.userId } }, // 排除当前用户
+                {
+                    $or: [
+                        { username: new RegExp(query, 'i') },
+                        { email: new RegExp(query, 'i') }
+                    ]
+                }
+            ]
+        })
+        .select('username avatar bio privacy friends')
+        .limit(10);
+
+        const processedUsers = users.map(user => {
+            const isFriend = currentUser.friends.includes(user._id);
+            return {
+                _id: user._id,
+                username: user.username,
+                avatar: user.avatar,
+                bio: user.privacy?.profileVisibility === 'private' ? '这是一个私密账户' : user.bio,
+                isPrivate: user.privacy?.profileVisibility === 'private',
+                isFriend: isFriend, // 添加好友状态
+                statistics: {
+                    friendsCount: user.friends?.length || 0
+                }
+            };
+        });
+
+        res.json(processedUsers);
+    } catch (error) {
+        console.error('搜索用户失败:', error);
+        res.status(500).json({ message: '搜索失败' });
+    }
+});
+
+// 2. 获取当前用户信息
 router.get('/me', auth, async (req, res) => {
     try {
         console.log('GET /me - 用户ID:', req.userId);
@@ -106,6 +154,72 @@ router.get('/me', auth, async (req, res) => {
     } catch (error) {
         console.error('获取用户信息错误:', error);
         res.status(500).json({ message: '服务器错误' });
+    }
+});
+
+// 3. 其他特定路由
+router.get('/suggestions', auth, async (req, res) => {
+    try {
+        const currentUser = await User.findById(req.userId);
+        
+        // 获取未关注的用户(排除自己和已关注的用户)
+        const suggestions = await User.find({
+            _id: { 
+                $nin: [
+                    req.userId,
+                    ...currentUser.following
+                ]
+            }
+        })
+        .select('username avatar bio')
+        .limit(5); // 限制返回5个推荐
+
+        res.json(suggestions);
+    } catch (error) {
+        console.error('获取推荐用户失败:', error);
+        res.status(500).json({ message: '获取推荐用户失败' });
+    }
+});
+
+// 4. 最后才是通用的用户ID路由
+router.get('/:userId', auth, checkPrivacy, async (req, res) => {
+    try {
+        const userId = req.params.userId === 'me' ? req.userId : req.params.userId;
+        const requestingUser = req.userId;
+
+        const user = await User.findById(userId)
+            .select('-password')
+            .populate('friends', 'username avatar bio')
+            .populate('posts')
+            .lean();
+
+        // 根据隐私设置过滤数据
+        if (userId !== requestingUser) {
+            if (!user.privacy.showEmail) {
+                delete user.email;
+            }
+            if (!user.privacy.showFollowers) {
+                delete user.followers;
+            }
+            if (!user.privacy.showFollowing) {
+                delete user.following;
+            }
+            if (!user.privacy.showPosts) {
+                delete user.posts;
+            }
+        }
+
+        // 添加统计数据
+        user.statistics = {
+            postsCount: user.posts ? user.posts.length : 0,
+            friendsCount: user.friends ? user.friends.length : 0,
+            likesCount: user.likesReceived || 0
+        };
+
+        res.json(user);
+    } catch (error) {
+        console.error('获取用户资料失败:', error);
+        res.status(500).json({ message: '获取用户资料失败' });
     }
 });
 
@@ -303,72 +417,6 @@ router.put('/profile', auth, upload.single('avatar'), async (req, res) => {
     } catch (error) {
         console.error('更新个人资料错误:', error);
         res.status(500).json({ message: '更新失败' });
-    }
-});
-
-// 获取用户资料
-router.get('/:userId', auth, checkPrivacy, async (req, res) => {
-    try {
-        const userId = req.params.userId === 'me' ? req.userId : req.params.userId;
-        const requestingUser = req.userId;
-
-        const user = await User.findById(userId)
-            .select('-password')
-            .populate('friends', 'username avatar bio')
-            .populate('posts')
-            .lean();
-
-        // 根据隐私设置过滤数据
-        if (userId !== requestingUser) {
-            if (!user.privacy.showEmail) {
-                delete user.email;
-            }
-            if (!user.privacy.showFollowers) {
-                delete user.followers;
-            }
-            if (!user.privacy.showFollowing) {
-                delete user.following;
-            }
-            if (!user.privacy.showPosts) {
-                delete user.posts;
-            }
-        }
-
-        // 添加统计数据
-        user.statistics = {
-            postsCount: user.posts ? user.posts.length : 0,
-            friendsCount: user.friends ? user.friends.length : 0,
-            likesCount: user.likesReceived || 0
-        };
-
-        res.json(user);
-    } catch (error) {
-        console.error('获取用户资料失败:', error);
-        res.status(500).json({ message: '获取用户资料失败' });
-    }
-});
-
-// 获取推荐关注用户
-router.get('/suggestions', auth, async (req, res) => {
-    try {
-        const currentUser = await User.findById(req.userId);
-        
-        // 获取未关注的用户(排除自己和已关注的用户)
-        const suggestions = await User.find({
-            _id: { 
-                $nin: [
-                    req.userId,
-                    ...currentUser.following
-                ]
-            }
-        })
-        .select('username avatar bio')
-        .limit(5); // 限制返回5个推荐
-
-        res.json(suggestions);
-    } catch (error) {
-        console.error('获取推荐用户失败:', error);
-        res.status(500).json({ message: '获取推荐用户失败' });
     }
 });
 
