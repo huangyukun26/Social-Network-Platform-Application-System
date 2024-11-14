@@ -68,6 +68,7 @@ const postRoutes = require('./routes/posts');
 const friendRoutes = require('./routes/friends');
 const followRoutes = require('./routes/followRoutes');
 const adminRoutes = require('./routes/admin');
+const cacheMonitorRoutes = require('./routes/admin/cache-monitor');
 
 // 注册路由
 app.use('/api/users', userRoutes);
@@ -75,6 +76,7 @@ app.use('/api/posts', postRoutes);
 app.use('/api/friends', friendRoutes);
 app.use('/api/follow', followRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/cache', cacheMonitorRoutes);
 
 // 基础路由
 app.get('/', (req, res) => {

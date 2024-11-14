@@ -30,19 +30,10 @@ const isAdmin = async (req, res, next) => {
 // 获取缓存监控指标
 router.get('/cache/metrics', auth, isAdmin, async (req, res) => {
     try {
-        const metrics = RedisClient.getMetrics();
-        
-        // 添加额外的系统信息
-        const systemInfo = {
-            nodeVersion: process.version,
-            platform: process.platform,
-            memory: process.memoryUsage(),
-            uptime: process.uptime()
-        };
+        const metrics = await RedisClient.getDetailedMetrics();
         
         res.json({
             metrics,
-            systemInfo,
             timestamp: new Date().toISOString()
         });
     } catch (error) {
@@ -99,6 +90,23 @@ router.get('/cache/metrics/history', auth, isAdmin, async (req, res) => {
         console.error('获取历史缓存指标失败:', error);
         res.status(500).json({ message: '获取历史指标失败' });
     }
+});
+
+// 添加缓存状态检查路由
+router.get('/cache/status', auth, isAdmin, async (req, res) => {
+  try {
+    const isConnected = await RedisClient.client.ping();
+    res.json({
+      status: isConnected === 'PONG' ? 'connected' : 'disconnected',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Redis状态检查失败:', error);
+    res.status(500).json({ 
+      status: 'error',
+      message: '缓存服务器状态检查失败'
+    });
+  }
 });
 
 module.exports = router; 

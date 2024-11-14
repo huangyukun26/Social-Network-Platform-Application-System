@@ -11,7 +11,8 @@
     "test:cache:watch": "jest tests/cache --watch --detectOpenHandles --verbose",
     "migrate:role": "node scripts/migrations/addRoleField.js",
     "create:admin": "node scripts/createAdmin.js",
-    "test:metrics": "cross-env NODE_ENV=test jest tests/cache/metrics.test.js --detectOpenHandles --forceExit --verbose"
+    "test:metrics": "cross-env NODE_ENV=test jest tests/cache/metrics.test.js --detectOpenHandles --forceExit --verbose",
+    "test:monitor": "cross-env NODE_ENV=test jest tests/admin/cache-monitor.test.js --detectOpenHandles --forceExit --verbose"
   },
   "keywords": [],
   "author": "",

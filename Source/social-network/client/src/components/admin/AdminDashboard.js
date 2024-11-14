@@ -10,10 +10,27 @@ const StyledLayout = styled(Layout)`
     min-height: 100vh;
 `;
 
+const StyledSider = styled(Sider)`
+    box-shadow: 2px 0 8px rgba(0,0,0,0.15);
+    .ant-menu {
+        border-right: none;
+    }
+`;
+
 const StyledContent = styled(Content)`
-    margin: 24px 16px;
+    margin: 24px;
     padding: 24px;
     background: #fff;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+`;
+
+const PageHeader = styled.div`
+    margin-bottom: 24px;
+    h1 {
+        margin: 0;
+        font-size: 24px;
+    }
 `;
 
 const AdminDashboard = () => {
@@ -32,7 +49,7 @@ const AdminDashboard = () => {
 
     return (
         <StyledLayout>
-            <Sider width={200} theme="light">
+            <StyledSider width={200} theme="light">
                 <Menu
                     mode="inline"
                     selectedKeys={[selectedMenu]}
@@ -49,8 +66,11 @@ const AdminDashboard = () => {
                         用户管理
                     </Menu.Item>
                 </Menu>
-            </Sider>
+            </StyledSider>
             <StyledContent>
+                <PageHeader>
+                    <h1>系统监控</h1>
+                </PageHeader>
                 {renderContent()}
             </StyledContent>
         </StyledLayout>

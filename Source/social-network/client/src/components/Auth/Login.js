@@ -81,29 +81,19 @@ const Login = () => {
                 throw new Error('登录返回数据不完整');
             }
 
-            // 保存前打印用户信息
-            console.log('即将保存到 localStorage 的用户信息:', {
-                token: '存在',
-                user: res.data.user,
-                role: res.data.user.role
-            });
-
-            const expiryTime = new Date().getTime() + (24 * 60 * 60 * 1000);
+            // 保存登录信息
             localStorage.setItem('token', res.data.token);
-            localStorage.setItem('tokenExpiry', expiryTime.toString());
             localStorage.setItem('user', JSON.stringify(res.data.user));
-            
-            // 验证保存是否成功
-            const savedUser = JSON.parse(localStorage.getItem('user') || '{}');
-            console.log('保存后的用户信息:', {
-                savedUser,
-                role: savedUser.role,
-                isAdmin: savedUser.role === 'admin'
-            });
-            
+            localStorage.setItem('tokenExpiry', new Date().getTime() + (24 * 60 * 60 * 1000));
+
+            // 可选：保存会话ID（如果后端返回）
+            if (res.data.sessionId) {
+                localStorage.setItem('sessionId', res.data.sessionId);
+            }
+
             message.success('登录成功！');
             
-            // 添加延时确保数据保存完成
+            // 根据角色跳转
             setTimeout(() => {
                 if (res.data.user.role === 'admin') {
                     console.log('是管理员，准备跳转到 /admin');

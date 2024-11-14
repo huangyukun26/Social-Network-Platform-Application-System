@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const friendController = require('../controllers/friendController');
 const User = require('../models/User');
+const RedisClient = require('../utils/RedisClient');
 
 // 添加好友隐私检查中间件
 const checkFriendPrivacy = async (req, res, next) => {

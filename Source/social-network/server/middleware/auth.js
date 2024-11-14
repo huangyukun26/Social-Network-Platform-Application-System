@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-module.exports = (req, res, next) => {
+module.exports = async (req, res, next) => {
     try {
         const token = req.header('Authorization');
         console.log('收到的token:', token);
@@ -9,7 +9,6 @@ module.exports = (req, res, next) => {
             return res.status(401).json({ message: '无访问权限' });
         }
 
-        // 移除 Bearer 前缀（如果存在）
         const tokenString = token.startsWith('Bearer ') ? token.slice(7) : token;
         console.log('处理后的token:', tokenString);
         

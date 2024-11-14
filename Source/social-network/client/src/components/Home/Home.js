@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Input, Button, List, Avatar, message, Space, Empty, Spin } from 'antd';
+import { Card, Input, Button, List, Avatar, message, Space, Empty, Spin, Row, Col, Statistic } from 'antd';
 import { 
     LikeOutlined, 
     LikeFilled, 
@@ -16,6 +16,7 @@ import styled from 'styled-components';
 import { theme } from '../../styles/theme';
 import { useNavigate, Link } from 'react-router-dom';
 import { CreatePost } from '../Posts';
+import PerformanceMonitor from '../../utils/performanceMonitor';
 
 const { TextArea } = Input;
 
@@ -288,6 +289,21 @@ const SuggestionsContainer = styled.div`
   margin-bottom: 24px;
 `;
 
+const PerformanceCard = styled(Card)`
+    margin-bottom: 24px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    
+    .ant-statistic-title {
+        color: #666;
+        font-size: 14px;
+    }
+    
+    .ant-statistic-content {
+        color: #1890ff;
+    }
+`;
+
 const Home = () => {
     const [posts, setPosts] = useState([]);
     const [content, setContent] = useState('');
@@ -302,8 +318,43 @@ const Home = () => {
     const [hasMore, setHasMore] = useState(true);
     const [initialLoading, setInitialLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
+    const [cacheMetrics, setCacheMetrics] = useState(null);
+    const [isAdmin, setIsAdmin] = useState(false);
+
+    // 检查用户是否为管理员
+    useEffect(() => {
+        const user = JSON.parse(localStorage.getItem('user'));
+        setIsAdmin(user?.role === 'admin');
+    }, []);
+
+    // 获取缓存性能数据
+    const fetchCacheMetrics = useCallback(async () => {
+        if (!isAdmin) return;
+        
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.get('http://localhost:5000/api/admin/cache/metrics', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setCacheMetrics(response.data.metrics);
+        } catch (error) {
+            console.error('获取缓存指标失败:', error);
+        }
+    }, [isAdmin]);
+
+    // 定期更新缓存指标
+    useEffect(() => {
+        if (isAdmin) {
+            fetchCacheMetrics();
+            const interval = setInterval(fetchCacheMetrics, 30000); // 每30秒更新一次
+            return () => clearInterval(interval);
+        }
+    }, [fetchCacheMetrics, isAdmin]);
 
     const fetchPosts = useCallback(async (pageNum = 1) => {
+        const requestKey = `posts-page-${pageNum}`;
+        PerformanceMonitor.startRequest(requestKey);
+        
         try {
             if (pageNum === 1) {
                 setInitialLoading(true);
@@ -325,6 +376,11 @@ const Home = () => {
             
             setHasMore(pageNum < response.data.totalPages);
             setPage(pageNum);
+            
+            const metrics = PerformanceMonitor.endRequest(requestKey, response.headers['x-cache-hit'] === 'true');
+            if (metrics && isAdmin) {
+                console.log('请求性能指标:', metrics);
+            }
         } catch (error) {
             console.error('获取帖子失败:', error);
             if (error.response?.status === 401) {
@@ -341,7 +397,7 @@ const Home = () => {
                 setLoadingMore(false);
             }
         }
-    }, [navigate]);
+    }, [navigate, isAdmin]);
 
     const fetchSuggestions = useCallback(async () => {
         try {
@@ -568,6 +624,45 @@ const Home = () => {
         }
     };
 
+    // 添加性能指标显示组件
+    const renderPerformanceMetrics = () => {
+        if (!isAdmin || !cacheMetrics) return null;
+
+        return (
+            <PerformanceCard>
+                <Row gutter={16}>
+                    <Col span={6}>
+                        <Statistic
+                            title="缓存命中率"
+                            value={cacheMetrics.hitRate}
+                            suffix="%"
+                            precision={2}
+                        />
+                    </Col>
+                    <Col span={6}>
+                        <Statistic
+                            title="平均延迟"
+                            value={cacheMetrics.averageLatency}
+                            suffix="ms"
+                        />
+                    </Col>
+                    <Col span={6}>
+                        <Statistic
+                            title="缓存请求总数"
+                            value={cacheMetrics.totalRequests}
+                        />
+                    </Col>
+                    <Col span={6}>
+                        <Statistic
+                            title="缓存键数量"
+                            value={cacheMetrics.keysCount}
+                        />
+                    </Col>
+                </Row>
+            </PerformanceCard>
+        );
+    };
+
     if (initialLoading) {
         return (
             <div style={{ 
@@ -583,6 +678,8 @@ const Home = () => {
 
     return (
         <Container>
+            {renderPerformanceMetrics()}
+            
             <StoriesContainer>
                 {/* Stories示例 */}
                 {[1,2,3,4,5].map(i => (

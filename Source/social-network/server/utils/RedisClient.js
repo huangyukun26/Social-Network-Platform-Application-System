@@ -25,7 +25,6 @@ class RedisClient {
             lastReset: new Date().toISOString()
         };
         
-        // 每5分钟保存一次指标
         this.startMetricsCollection();
     }
 
@@ -134,8 +133,13 @@ class RedisClient {
 
     // 好友请求相关缓存
     async getFriendRequests(userId) {
+        const startTime = performance.now();
         const key = `friend:requests:${userId}`;
         const cached = await this.client.get(key);
+        
+        // 添加性能追踪
+        await this.trackCacheMetrics(key, startTime, !!cached);
+        
         return cached ? JSON.parse(cached) : null;
     }
 
@@ -146,8 +150,14 @@ class RedisClient {
 
     // 好友状态缓存
     async getFriendshipStatus(userId, targetId) {
+        const startTime = performance.now();
         const key = `friendship:${userId}:${targetId}`;
-        return await this.client.get(key);
+        const result = await this.client.get(key);
+        
+        // 添加性能追踪
+        await this.trackCacheMetrics(key, startTime, !!result);
+        
+        return result;
     }
 
     async setFriendshipStatus(userId, targetId, status, expiry = 300) {
@@ -174,8 +184,13 @@ class RedisClient {
 
     // 好友推荐缓存
     async getFriendSuggestions(userId) {
+        const startTime = performance.now();
         const key = `friend:suggestions:${userId}`;
         const cached = await this.client.get(key);
+        
+        // 添加性能追踪
+        await this.trackCacheMetrics(key, startTime, !!cached);
+        
         return cached ? JSON.parse(cached) : null;
     }
 
@@ -196,6 +211,98 @@ class RedisClient {
     async cleanup() {
         if (this.metricsInterval) {
             clearInterval(this.metricsInterval);
+            this.metricsInterval = null;
+        }
+        // 重置指标
+        this.resetMetrics();
+        // 不要关闭Redis连接，因为可能其他地方还在使用
+    }
+
+    // 添加分布式会话管理
+    async setDistributedSession(userId, token) {
+        const key = `user:session:${userId}`;
+        const sessionData = {
+            token,
+            lastActive: Date.now(),
+            createdAt: Date.now()
+        };
+        
+        // 存储会话信息但不影响现有token验证
+        await this.client.hset(key, {
+            ...sessionData,
+            userId // 保持与现有系统一致的userId字段
+        });
+        
+        // 设置24小时过期
+        await this.client.expire(key, 24 * 60 * 60);
+    }
+
+    async getDistributedSession(userId) {
+        const key = `user:session:${userId}`;
+        const session = await this.client.hgetall(key);
+        return session;
+    }
+
+    async updateSessionActivity(userId) {
+        const key = `user:session:${userId}`;
+        await this.client.hset(key, 'lastActive', Date.now());
+    }
+
+    // 完善会话管理
+    async setUserSession(userId, deviceInfo) {
+        const sessionId = Date.now().toString();
+        const sessionKey = `session:${userId}`;
+        const sessionData = {
+            deviceInfo,
+            loginTime: new Date().toISOString(),
+            lastActive: new Date().toISOString()
+        };
+
+        await this.client.hset(sessionKey, sessionId, JSON.stringify(sessionData));
+        await this.client.expire(sessionKey, 24 * 60 * 60);
+        
+        return sessionId;
+    }
+
+    async validateSession(userId, sessionId) {
+        const sessionKey = `session:${userId}`;
+        const sessionData = await this.client.hget(sessionKey, sessionId);
+        return sessionData ? JSON.parse(sessionData) : null;
+    }
+
+    // 更新会话活跃时间
+    async updateSessionActivity(userId, sessionId) {
+        const sessionKey = `session:${userId}`;
+        const sessionData = await this.client.hget(sessionKey, sessionId);
+        if (sessionData) {
+            const session = JSON.parse(sessionData);
+            session.lastActive = new Date().toISOString();
+            await this.client.hset(sessionKey, sessionId, JSON.stringify(session));
+        }
+    }
+
+    // 获取用户所有会话
+    async getUserSessions(userId) {
+        const sessionKey = `session:${userId}`;
+        try {
+            const sessions = await this.client.hgetall(sessionKey);
+            return Object.entries(sessions || {}).map(([id, session]) => ({
+                id,
+                ...JSON.parse(session)
+            }));
+        } catch (error) {
+            console.error('获取用户会话失败:', error);
+            return [];
+        }
+    }
+
+    // 删除指定会话
+    async removeSession(userId, sessionId) {
+        const sessionKey = `session:${userId}`;
+        try {
+            await this.client.hdel(sessionKey, sessionId);
+        } catch (error) {
+            console.error('删除会话失败:', error);
         }
     }
 }
