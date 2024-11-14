@@ -277,6 +277,7 @@ router.post('/login', async (req, res) => {
                 bio: user.bio,
                 website: user.website,
                 privacy: user.privacy,
+                role: user.role,  // 添加这行
                 createdAt: user.createdAt
             }
         });

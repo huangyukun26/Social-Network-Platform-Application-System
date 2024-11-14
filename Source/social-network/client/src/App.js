@@ -8,6 +8,8 @@ import Register from './components/Auth/Register';
 import Profile from './components/Profile/Profile';
 import EditProfile from './components/Profile/EditProfile';
 import Friends from './components/Friends/Friends';
+import AdminRoute from './components/Auth/AdminRoute';
+import AdminDashboard from './components/admin/AdminDashboard';
 
 function App() {
   const isAuthenticated = () => {
@@ -22,6 +24,11 @@ function App() {
     <Router>
       <GlobalStyle />
       <Routes>
+        <Route path="/admin" element={
+          <AdminRoute>
+            <AdminDashboard />
+          </AdminRoute>
+        } />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/friends" element={

@@ -1,10 +1,17 @@
 const FriendRequest = require('../models/FriendRequest');
 const User = require('../models/User');
+const RedisClient = require('../utils/RedisClient');
 
 const friendController = {
     // 获取好友请求列表
     getFriendRequests: async (req, res) => {
         try {
+            // 尝试从缓存获取
+            const cachedRequests = await RedisClient.getFriendRequests(req.userId);
+            if (cachedRequests) {
+                return res.json(cachedRequests);
+            }
+
             console.log('Fetching friend requests for user:', req.userId);
             
             const requests = await FriendRequest.find({
@@ -38,6 +45,10 @@ const friendController = {
             });
             
             console.log('Sending response:', requestsWithStats); // 调试日志
+
+            // 设置缓存
+            await RedisClient.setFriendRequests(req.userId, requestsWithStats);
+            
             res.json(requestsWithStats);
         } catch (error) {
             console.error('获取好友请求失败:', error);
@@ -197,7 +208,7 @@ const friendController = {
         } catch (error) {
             console.error('获取好友推荐失败:', error);
             res.status(500).json({ 
-                message: '获取好友推���败',
+                message: '获取好友推败',
                 error: error.message 
             });
         }
@@ -257,8 +268,15 @@ const friendController = {
         try {
             const { userId } = req.params;
             
+            // 检查缓存
+            const cachedStatus = await RedisClient.getFriendshipStatus(req.userId, userId);
+            if (cachedStatus) {
+                return res.json({ status: cachedStatus });
+            }
+
             // 检查是否是自己
             if (userId === req.userId) {
+                await RedisClient.setFriendshipStatus(req.userId, userId, 'self');
                 return res.json({ status: 'self' });
             }
 
@@ -269,6 +287,7 @@ const friendController = {
             );
             
             if (isFriend) {
+                await RedisClient.setFriendshipStatus(req.userId, userId, 'friends');
                 return res.json({ status: 'friends' });
             }
             
@@ -282,15 +301,15 @@ const friendController = {
             });
             
             if (pendingRequest) {
-                const direction = pendingRequest.sender.toString() === req.userId 
-                    ? 'sent' 
-                    : 'received';
-                return res.json({ 
+                const status = {
                     status: 'pending',
-                    direction: direction
-                });
+                    direction: pendingRequest.sender.toString() === req.userId ? 'sent' : 'received'
+                };
+                await RedisClient.setFriendshipStatus(req.userId, userId, JSON.stringify(status));
+                return res.json(status);
             }
             
+            await RedisClient.setFriendshipStatus(req.userId, userId, 'none');
             res.json({ status: 'none' });
         } catch (error) {
             console.error('获取好友状态失败:', error);

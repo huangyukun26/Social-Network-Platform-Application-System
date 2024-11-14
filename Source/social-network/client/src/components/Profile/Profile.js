@@ -511,6 +511,39 @@ const Profile = () => {
         fetchProfileData();
     }, [userId]);
 
+    const fetchFriendshipStatus = async (retries = 3) => {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await axios.get(
+                    `http://localhost:5000/api/friends/status/${userId}`,
+                    { headers: { Authorization: `Bearer ${token}` }}
+                );
+                return response.data;
+            } catch (error) {
+                if (i === retries - 1) throw error;
+                await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+            }
+        }
+    };
+
+    // 修改 useEffect 中的获取状态逻辑
+    useEffect(() => {
+        if (userId && userId !== currentUserId) {
+            fetchFriendshipStatus()
+                .then(data => {
+                    setFriendshipStatus(data.status);
+                    if (data.direction === 'received') {
+                        setFriendshipStatus('received');
+                    }
+                })
+                .catch(error => {
+                    console.error('获取好友状态失败:', error);
+                    setFriendshipStatus('none');
+                });
+        }
+    }, [userId, currentUserId]);
+
     // 7. 渲染逻辑
     if (loading) {
         return (

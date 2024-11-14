@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 const fs = require('fs');
+const RedisClient = require('./utils/RedisClient');
 
 const app = express();
 
@@ -42,7 +43,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// 连接MongoDB���据库
+// 连接MongoDB据库
 mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true
@@ -50,6 +51,11 @@ mongoose.connect(process.env.MONGODB_URI, {
 .then(() => {
     console.log('MongoDB连接成功');
     console.log('数据库URI:', process.env.MONGODB_URI);
+    RedisClient.client.ping().then(() => {
+        console.log('Redis连接成功');
+    }).catch(err => {
+        console.error('Redis连接失败:', err);
+    });
 })
 .catch(err => {
     console.error('MongoDB连接失败:', err);
@@ -61,12 +67,14 @@ const userRoutes = require('./routes/users');
 const postRoutes = require('./routes/posts');
 const friendRoutes = require('./routes/friends');
 const followRoutes = require('./routes/followRoutes');
+const adminRoutes = require('./routes/admin');
 
 // 注册路由
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/friends', friendRoutes);
 app.use('/api/follow', followRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 基础路由
 app.get('/', (req, res) => {
@@ -100,18 +108,20 @@ app.use((err, req, res, next) => {
     });
 });
 
-// 启动服务器
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`服务器运行在端口 ${PORT}`);
-    console.log('可用路由:');
-    console.log('- GET  /api/users/me');
-    console.log('- POST /api/users/login');
-    console.log('- POST /api/users/register');
-    console.log('- GET  /api/posts/user/:userId');
-    console.log('- POST /api/follow/:userId');
-    console.log('- GET  /api/follow/:userId/followers');
-    console.log('- GET  /api/follow/:userId/following');
-});
+// 修改服务器启动部分
+if (process.env.NODE_ENV !== 'test') {
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+        console.log(`服务器运行在端口 ${PORT}`);
+        console.log('可用路由:');
+        console.log('- GET  /api/users/me');
+        console.log('- POST /api/users/login');
+        console.log('- POST /api/users/register');
+        console.log('- GET  /api/posts/user/:userId');
+        console.log('- POST /api/follow/:userId');
+        console.log('- GET  /api/follow/:userId/followers');
+        console.log('- GET  /api/follow/:userId/following');
+    });
+}
 
 module.exports = app; 

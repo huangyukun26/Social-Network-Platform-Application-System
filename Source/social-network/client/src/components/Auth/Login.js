@@ -63,27 +63,64 @@ const Login = () => {
     const onFinish = async (values) => {
         try {
             setLoading(true);
+            console.log('开始登录请求，参数:', values);
+            
             const res = await axios.post('http://localhost:5000/api/users/login', values);
             
-            console.log('登录响应:', res.data);
+            // 详细打印登录响应
+            console.log('登录响应完整数据:', {
+                status: res.status,
+                data: res.data,
+                user: res.data.user,
+                token: res.data.token ? '存在' : '不存在',
+                role: res.data.user?.role
+            });
             
             if (!res.data.token || !res.data.user) {
+                console.error('登录数据不完整:', res.data);
                 throw new Error('登录返回数据不完整');
             }
 
-            const expiryTime = new Date().getTime() + (24 * 60 * 60 * 1000); // 24小时
+            // 保存前打印用户信息
+            console.log('即将保存到 localStorage 的用户信息:', {
+                token: '存在',
+                user: res.data.user,
+                role: res.data.user.role
+            });
+
+            const expiryTime = new Date().getTime() + (24 * 60 * 60 * 1000);
             localStorage.setItem('token', res.data.token);
             localStorage.setItem('tokenExpiry', expiryTime.toString());
             localStorage.setItem('user', JSON.stringify(res.data.user));
             
+            // 验证保存是否成功
+            const savedUser = JSON.parse(localStorage.getItem('user') || '{}');
+            console.log('保存后的用户信息:', {
+                savedUser,
+                role: savedUser.role,
+                isAdmin: savedUser.role === 'admin'
+            });
+            
             message.success('登录成功！');
             
+            // 添加延时确保数据保存完成
             setTimeout(() => {
-                navigate('/', { replace: true });
+                if (res.data.user.role === 'admin') {
+                    console.log('是管理员，准备跳转到 /admin');
+                    navigate('/admin', { replace: true });
+                } else {
+                    console.log('是普通用户，准备跳转到 /');
+                    navigate('/', { replace: true });
+                }
             }, 100);
 
         } catch (error) {
             console.error('登录错误:', error);
+            console.error('错误详情:', {
+                response: error.response?.data,
+                status: error.response?.status,
+                message: error.message
+            });
             message.error(error.response?.data?.message || '登录失败');
         } finally {
             setLoading(false);
