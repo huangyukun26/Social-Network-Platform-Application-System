@@ -85,15 +85,17 @@ const Login = () => {
             sessionStorage.setItem('user', JSON.stringify(res.data.user));
             sessionStorage.setItem('tokenExpiry', new Date().getTime() + (24 * 60 * 60 * 1000));
 
+            console.log('用户角色:', res.data.user.role);
             message.success('登录成功！');
             
-            setTimeout(() => {
-                if (res.data.user.role === 'admin') {
-                    navigate('/admin');
-                } else {
-                    navigate('/');
-                }
-            }, 1000);
+            // 立即跳转，不使用 setTimeout
+            if (res.data.user.role === 'admin') {
+            console.log('跳转到管理面板');
+            navigate('/admin', { replace: true });
+            } else {
+            console.log('跳转到首页');
+            navigate('/', { replace: true });
+            }
 
         } catch (error) {
             console.error('登录错误:', error);

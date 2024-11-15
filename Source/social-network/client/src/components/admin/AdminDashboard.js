@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout, Menu, Card, Statistic } from 'antd';
 import { DashboardOutlined, LineChartOutlined, UserOutlined } from '@ant-design/icons';
 import CacheMonitor from './CacheMonitor';
 import styled from 'styled-components';
+import { useNavigate } from 'react-router-dom';
 
 const { Content, Sider } = Layout;
 
@@ -35,6 +36,15 @@ const PageHeader = styled.div`
 
 const AdminDashboard = () => {
     const [selectedMenu, setSelectedMenu] = useState('cache');
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+        if (user.role !== 'admin') {
+            console.log('非管理员访问，重定向到首页');
+            navigate('/', { replace: true });
+        }
+    }, [navigate]);
 
     const renderContent = () => {
         switch (selectedMenu) {

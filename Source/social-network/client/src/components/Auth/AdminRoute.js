@@ -2,9 +2,9 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 
 const AdminRoute = ({ children }) => {
-    const token = localStorage.getItem('token');
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const tokenExpiry = localStorage.getItem('tokenExpiry');
+    const token = sessionStorage.getItem('token');
+    const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+    const tokenExpiry = sessionStorage.getItem('tokenExpiry');
     
     console.log('AdminRoute 检查:', {
         hasToken: !!token,
@@ -26,4 +26,4 @@ const AdminRoute = ({ children }) => {
     return <Navigate to="/login" />;
 };
 
-export default AdminRoute; 
+export default AdminRoute;

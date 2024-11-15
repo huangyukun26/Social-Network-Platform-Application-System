@@ -29,7 +29,7 @@ const CacheMonitor = () => {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const [metricsRes, historyRes] = await Promise.all([
                     axios.get('http://localhost:5000/api/admin/cache/metrics', {
                         headers: { Authorization: `Bearer ${token}` }
