@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Form, message, Card, Divider, Button } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import axios from '../../utils/axios';
 import {
     AuthContainer,
     StyledForm,
@@ -63,55 +63,41 @@ const Login = () => {
     const onFinish = async (values) => {
         try {
             setLoading(true);
-            console.log('开始登录请求，参数:', values);
             
-            const res = await axios.post('http://localhost:5000/api/users/login', values);
+            const deviceInfo = {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                language: navigator.language,
+                windowId: window.name || Math.random().toString(36).substr(2, 9)
+            };
             
-            // 详细打印登录响应
-            console.log('登录响应完整数据:', {
-                status: res.status,
-                data: res.data,
-                user: res.data.user,
-                token: res.data.token ? '存在' : '不存在',
-                role: res.data.user?.role
+            const res = await axios.post('/users/login', {
+                ...values,
+                deviceInfo
             });
             
-            if (!res.data.token || !res.data.user) {
-                console.error('登录数据不完整:', res.data);
+            if (!res.data.token || !res.data.sessionId) {
                 throw new Error('登录返回数据不完整');
             }
 
-            // 保存登录信息
-            localStorage.setItem('token', res.data.token);
-            localStorage.setItem('user', JSON.stringify(res.data.user));
-            localStorage.setItem('tokenExpiry', new Date().getTime() + (24 * 60 * 60 * 1000));
-
-            // 可选：保存会话ID（如果后端返回）
-            if (res.data.sessionId) {
-                localStorage.setItem('sessionId', res.data.sessionId);
-            }
+            sessionStorage.setItem('token', res.data.token);
+            sessionStorage.setItem('sessionId', res.data.sessionId);
+            sessionStorage.setItem('user', JSON.stringify(res.data.user));
+            sessionStorage.setItem('tokenExpiry', new Date().getTime() + (24 * 60 * 60 * 1000));
 
             message.success('登录成功！');
             
-            // 根据角色跳转
             setTimeout(() => {
                 if (res.data.user.role === 'admin') {
-                    console.log('是管理员，准备跳转到 /admin');
-                    navigate('/admin', { replace: true });
+                    navigate('/admin');
                 } else {
-                    console.log('是普通用户，准备跳转到 /');
-                    navigate('/', { replace: true });
+                    navigate('/');
                 }
-            }, 100);
+            }, 1000);
 
         } catch (error) {
             console.error('登录错误:', error);
-            console.error('错误详情:', {
-                response: error.response?.data,
-                status: error.response?.status,
-                message: error.message
-            });
-            message.error(error.response?.data?.message || '登录失败');
+            message.error(error.response?.data?.message || '登录失败，请稍后重试');
         } finally {
             setLoading(false);
         }

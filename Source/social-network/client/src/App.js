@@ -13,11 +13,32 @@ import AdminDashboard from './components/admin/AdminDashboard';
 
 function App() {
   const isAuthenticated = () => {
-    return localStorage.getItem('token') !== null;
+    const token = sessionStorage.getItem('token');
+    const tokenExpiry = sessionStorage.getItem('tokenExpiry');
+    const user = sessionStorage.getItem('user');
+    
+    if (!token || !tokenExpiry || !user) {
+        return false;
+    }
+    
+    if (new Date().getTime() > parseInt(tokenExpiry)) {
+        sessionStorage.clear();
+        return false;
+    }
+    
+    return true;
   };
 
   const PrivateRoute = ({ children }) => {
-    return isAuthenticated() ? children : <Navigate to="/login" />;
+    const auth = isAuthenticated();
+    
+    React.useEffect(() => {
+        if (!auth) {
+            sessionStorage.clear();
+        }
+    }, [auth]);
+    
+    return auth ? children : <Navigate to="/login" replace />;
   };
 
   return (

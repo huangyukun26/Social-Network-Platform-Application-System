@@ -25,13 +25,21 @@ router.post('/login', async (req, res) => {
             { expiresIn: '24h' }
         );
 
+        const sessionId = await RedisClient.setUserSession(user._id, {
+            userId: user._id,
+            deviceInfo: req.body.deviceInfo || {},
+            loginTime: new Date().toISOString()
+        });
+
         res.json({
             token,
+            sessionId,
             user: {
                 id: user._id,
                 username: user.username,
                 email: user.email,
-                role: user.role
+                role: user.role,
+                avatar: user.avatar
             }
         });
     } catch (error) {

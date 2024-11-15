@@ -7,6 +7,7 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
+const RedisClient = require('../utils/RedisClient');
 
 // 配置 multer 存储
 const storage = multer.diskStorage({
@@ -218,7 +219,7 @@ router.get('/:userId', auth, checkPrivacy, async (req, res) => {
 
         res.json(user);
     } catch (error) {
-        console.error('获取用户资料失败:', error);
+        console.error('获取��户资料失败:', error);
         res.status(500).json({ message: '获取用户资料失败' });
     }
 });
@@ -236,11 +237,9 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        console.log('登录请求:', req.body);
         const { password } = req.body;
-
-        // 查找用户
         const user = await User.findOne({ email });
+        
         if (!user) {
             return res.status(401).json({ message: '邮箱或密码错误' });
         }
@@ -248,16 +247,13 @@ router.post('/login', async (req, res) => {
         // 验证密码
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
+            loginAttempts.set(email, attempts + 1);
+            setTimeout(() => loginAttempts.delete(email), 15 * 60 * 1000);
             return res.status(401).json({ message: '邮箱或密码错误' });
         }
 
-        // 登录失败时记录
-        if (!isMatch) {
-            loginAttempts.set(email, attempts + 1);
-            setTimeout(() => loginAttempts.delete(email), 15 * 60 * 1000);
-        } else {
-            loginAttempts.delete(email);
-        }
+        // 清除失败记录
+        loginAttempts.delete(email);
 
         // 生成 token
         const token = jwt.sign(
@@ -266,22 +262,47 @@ router.post('/login', async (req, res) => {
             { expiresIn: '24h' }
         );
 
-        // 返回用户信息和token
-        res.json({
-            token,
-            user: {
-                _id: user._id,
-                username: user.username,
-                email: user.email,
-                avatar: user.avatar,
-                bio: user.bio,
-                website: user.website,
-                privacy: user.privacy,
-                role: user.role,  // 添加这行
-                createdAt: user.createdAt
-            }
-        });
+        try {
+            // 创��分布式会话
+            const sessionId = await RedisClient.setUserSession(user._id, {
+                userId: user._id,
+                deviceInfo: req.body.deviceInfo || {},
+                loginTime: new Date().toISOString()
+            });
 
+            res.json({
+                token,
+                sessionId,
+                user: {
+                    _id: user._id,
+                    username: user.username,
+                    email: user.email,
+                    avatar: user.avatar,
+                    bio: user.bio,
+                    website: user.website,
+                    privacy: user.privacy,
+                    role: user.role,
+                    createdAt: user.createdAt
+                }
+            });
+        } catch (redisError) {
+            console.error('Redis 会话创建失败:', redisError);
+            // 即使 Redis 出错，也返回基本的登录信息
+            res.json({
+                token,
+                user: {
+                    _id: user._id,
+                    username: user.username,
+                    email: user.email,
+                    avatar: user.avatar,
+                    bio: user.bio,
+                    website: user.website,
+                    privacy: user.privacy,
+                    role: user.role,
+                    createdAt: user.createdAt
+                }
+            });
+        }
     } catch (error) {
         console.error('登录错误:', error);
         res.status(500).json({ message: '服务器错误' });

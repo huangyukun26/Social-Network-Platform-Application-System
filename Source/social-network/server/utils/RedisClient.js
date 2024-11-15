@@ -249,25 +249,78 @@ class RedisClient {
     }
 
     // 完善会话管理
-    async setUserSession(userId, deviceInfo) {
-        const sessionId = Date.now().toString();
-        const sessionKey = `session:${userId}`;
-        const sessionData = {
-            deviceInfo,
-            loginTime: new Date().toISOString(),
-            lastActive: new Date().toISOString()
-        };
+    async setUserSession(userId, sessionData) {
+        try {
+            // 生成唯一的会话ID
+            const sessionId = `${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const key = `session:${userId}:${sessionId}`;
+            
+            // 获取用户现有的会话
+            const existingSessions = await this.getUserActiveSessions(userId);
+            
+            // 如果存在其他会话，将其标记为已过期
+            for (const session of existingSessions) {
+                if (session.deviceInfo?.userAgent === sessionData.deviceInfo?.userAgent) {
+                    await this.removeSession(userId, session.sessionId);
+                }
+            }
+            
+            // 设置新会话
+            await this.client.hmset(key, {
+                ...sessionData,
+                lastActive: Date.now(),
+                createdAt: Date.now()
+            });
+            
+            // 设置24小时过期
+            await this.client.expire(key, 24 * 60 * 60);
+            
+            return sessionId;
+        } catch (error) {
+            console.error('设置用户会话失败:', error);
+            throw error;
+        }
+    }
 
-        await this.client.hset(sessionKey, sessionId, JSON.stringify(sessionData));
-        await this.client.expire(sessionKey, 24 * 60 * 60);
+    async getSession(userId, sessionId) {
+        const key = `session:${userId}:${sessionId}`;
+        const session = await this.client.hgetall(key);
+        return session;
+    }
+
+    async updateSession(userId, sessionId) {
+        const key = `session:${userId}:${sessionId}`;
+        await this.client.hset(key, 'lastActive', Date.now());
+        await this.client.expire(key, 24 * 60 * 60); // 续期
+    }
+    
+    async removeSession(userId, sessionId) {
+        const key = `session:${userId}:${sessionId}`;
+        await this.client.del(key);
+    }
+    
+    async getUserActiveSessions(userId) {
+        const pattern = `session:${userId}:*`;
+        const keys = await this.client.keys(pattern);
+        const sessions = [];
         
-        return sessionId;
+        for (const key of keys) {
+            const session = await this.client.hgetall(key);
+            if (session) {
+                sessions.push({
+                    sessionId: key.split(':')[2],
+                    ...session
+                });
+            }
+        }
+        
+        return sessions;
     }
 
     async validateSession(userId, sessionId) {
-        const sessionKey = `session:${userId}`;
-        const sessionData = await this.client.hget(sessionKey, sessionId);
-        return sessionData ? JSON.parse(sessionData) : null;
+        const key = `session:${userId}:${sessionId}`;
+        const session = await this.client.hgetall(key);
+        return session && Object.keys(session).length > 0 ? session : null;
     }
 
     // 更新会话活跃时间
