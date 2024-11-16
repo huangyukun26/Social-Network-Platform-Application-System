@@ -311,7 +311,6 @@ const Home = () => {
     const [commentContent, setCommentContent] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const [postSubmitting, setPostSubmitting] = useState(false);
-    const user = JSON.parse(localStorage.getItem('user'));
     const navigate = useNavigate();
     const [suggestions, setSuggestions] = useState([]);
     const [page, setPage] = useState(1);
@@ -320,10 +319,33 @@ const Home = () => {
     const [loadingMore, setLoadingMore] = useState(false);
     const [cacheMetrics, setCacheMetrics] = useState(null);
     const [isAdmin, setIsAdmin] = useState(false);
+    const [user, setUser] = useState(null);
+
+    useEffect(() => {
+        const token = sessionStorage.getItem('token');
+        const sessionId = sessionStorage.getItem('sessionId');
+        const storedUser = JSON.parse(sessionStorage.getItem('user'));
+        const tokenExpiry = sessionStorage.getItem('tokenExpiry');
+        
+        if (tokenExpiry && new Date().getTime() > parseInt(tokenExpiry)) {
+            sessionStorage.clear();
+            navigate('/login');
+            return;
+        }
+        
+        if (!token || !sessionId || !storedUser) {
+            navigate('/login');
+            return;
+        }
+        
+        setUser(storedUser);
+        fetchPosts(1);
+        fetchSuggestions();
+    }, [navigate]);
 
     // 检查用户是否为管理员
     useEffect(() => {
-        const user = JSON.parse(localStorage.getItem('user'));
+        const user = JSON.parse(sessionStorage.getItem('user'));
         setIsAdmin(user?.role === 'admin');
     }, []);
 
@@ -332,7 +354,7 @@ const Home = () => {
         if (!isAdmin) return;
         
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await axios.get('http://localhost:5000/api/admin/cache/metrics', {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -362,10 +384,11 @@ const Home = () => {
                 setLoadingMore(true);
             }
 
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
+            const sessionId = sessionStorage.getItem('sessionId');
             const response = await axios.get(
                 `http://localhost:5000/api/posts/feed/page/${pageNum}`,
-                { headers: { Authorization: `Bearer ${token}` }}
+                { headers: { Authorization: `Bearer ${token}`, 'Session-ID': sessionId }}
             );
             
             if (pageNum === 1) {
@@ -384,8 +407,11 @@ const Home = () => {
         } catch (error) {
             console.error('获取帖子失败:', error);
             if (error.response?.status === 401) {
-                localStorage.clear();
-                message.error('请重新登录');
+                sessionStorage.removeItem('token');
+                sessionStorage.removeItem('sessionId');
+                sessionStorage.removeItem('user');
+                sessionStorage.removeItem('tokenExpiry');
+                setUser(null);
                 navigate('/login');
             } else {
                 message.error('获取帖子失败');
@@ -401,7 +427,7 @@ const Home = () => {
 
     const fetchSuggestions = useCallback(async () => {
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             if (!token) {
                 console.log('未找到token');
                 return;
@@ -421,14 +447,6 @@ const Home = () => {
         }
     }, []);
 
-    useEffect(() => {
-        const init = async () => {
-            await fetchPosts(1);
-            await fetchSuggestions();
-        };
-        init();
-    }, [fetchPosts, fetchSuggestions]);
-
     const handlePost = async () => {
         if (!content.trim()) {
             return message.warning('请输入内容');
@@ -436,7 +454,7 @@ const Home = () => {
 
         try {
             setPostSubmitting(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             await axios.post('http://localhost:5000/api/posts', 
                 { content },
                 { headers: { Authorization: `Bearer ${token}` } }
@@ -453,8 +471,8 @@ const Home = () => {
 
     const handleLike = async (postId) => {
         try {
-            const token = localStorage.getItem('token');
-            const user = JSON.parse(localStorage.getItem('user'));
+            const token = sessionStorage.getItem('token');
+            const user = JSON.parse(sessionStorage.getItem('user'));
             
             if (!token || !user) {
                 message.error('请先登录');
@@ -511,7 +529,7 @@ const Home = () => {
 
         try {
             setSubmitting(true);
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const cleanedPostId = postId.replace(/\.\.\./g, '');
             
             const response = await axios.post(
@@ -556,7 +574,7 @@ const Home = () => {
 
     const handleSave = async (postId) => {
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await axios.post(
                 `http://localhost:5000/api/posts/${postId}/save`,
                 {},
@@ -606,7 +624,7 @@ const Home = () => {
 
     const handleSendRequest = async (userId) => {
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             await axios.post(`http://localhost:5000/api/friends/request/${userId}`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -661,6 +679,19 @@ const Home = () => {
                 </Row>
             </PerformanceCard>
         );
+    };
+
+    const handleProfileClick = (userId) => {
+        const token = sessionStorage.getItem('token');
+        const sessionId = sessionStorage.getItem('sessionId');
+        
+        if (!token || !sessionId) {
+            message.error('请先登录');
+            navigate('/login');
+            return;
+        }
+        
+        navigate(`/profile/${userId}`);
     };
 
     if (initialLoading) {
@@ -722,109 +753,124 @@ const Home = () => {
 
             <List
                 dataSource={posts}
-                loadMore={
-                    hasMore && (
-                        <div style={{ textAlign: 'center', margin: '12px 0' }}>
-                            <Button 
-                                onClick={loadMore} 
-                                loading={loadingMore}
-                            >
-                                加载更多
-                            </Button>
-                        </div>
-                    )
-                }
+                loadMore={hasMore && (
+                    <div style={{ textAlign: 'center', margin: '12px 0' }}>
+                        <Button 
+                            onClick={loadMore} 
+                            loading={loadingMore}
+                        >
+                            加载更多
+                        </Button>
+                    </div>
+                )}
                 locale={{
                     emptyText: <Empty description="暂无动态" />
                 }}
-                renderItem={post => (
-                    <PostCard>
-                        <PostHeader>
-                            <Avatar 
-                                src={getFullAvatarUrl(post.author.avatar)} 
-                                icon={<UserOutlined />} 
-                            />
-                            <Link to={`/profile/${post.author._id}`} className="username">
-                                {post.author.username}
-                            </Link>
-                            <EllipsisOutlined className="more-options" />
-                        </PostHeader>
-                        
-                        {post.image ? (
-                            // 有图片时显示图片
-                            <PostImage onDoubleClick={() => !post.likes.includes(user._id) && handleLike(post._id)}>
-                                <img src={getFullImageUrl(post.image)} alt="post" />
-                            </PostImage>
-                        ) : (
-                            // 没有图片时只显示内容
-                            <PostContent className="no-image">
-                                {post.content}
-                            </PostContent>
-                        )}
+                renderItem={post => {
+                    if (!post?._id || !post?.author?._id) {
+                        console.warn('Invalid post data:', post);
+                        return null;
+                    }
 
-                        <PostActions>
-                            <Space>
-                                <Button 
-                                    type="text" 
-                                    icon={post.likes.includes(user._id) ? <LikeFilled /> : <LikeOutlined />}
-                                    onClick={() => handleLike(post._id)}
+                    const author = post.author || {};
+                    const likes = post.likes || [];
+                    const comments = post.comments || [];
+                    const savedBy = post.savedBy || [];
+
+                    return (
+                        <PostCard key={post._id}>
+                            <PostHeader>
+                                <Avatar 
+                                    src={author.avatar ? getFullAvatarUrl(author.avatar) : null} 
+                                    icon={<UserOutlined />} 
                                 />
-                                <Button 
-                                    type="text" 
-                                    icon={<CommentOutlined />} 
-                                />
-                                <Button 
-                                    type="text" 
-                                    icon={post.savedBy?.includes(user._id) ? <SaveFilled /> : <SaveOutlined />}
-                                    onClick={() => handleSave(post._id)}
-                                />
-                            </Space>
-                        </PostActions>
-                        
-                        <PostContent>
-                            <div className="likes">
-                                {post.likes.length} 次赞
-                            </div>
-                            <div className="caption">
-                                <span className="username">{post.author.username}</span>
-                                {post.content}
-                            </div>
-                            <div className="timestamp">
-                                {formatTime(post.createdAt)}
-                            </div>
-                        </PostContent>
-                        
-                        <CommentSection>
-                            <CommentList>
-                                {post.comments.map((comment, index) => (
-                                    <div key={index} className="comment">
-                                        <span className="username">{comment.user.username}</span>
-                                        {comment.content}
-                                    </div>
-                                ))}
-                            </CommentList>
-                            
-                            <CommentInput>
-                                <TextArea
-                                    value={commentContent[post._id] || ''}
-                                    onChange={e => setCommentContent({
-                                        ...commentContent,
-                                        [post._id]: e.target.value
-                                    })}
-                                    placeholder="添加评论..."
-                                    autoSize
-                                />
-                                <Button 
-                                    type="link"
-                                    onClick={() => handleComment(post._id)}
-                                    loading={submitting}
+                                <Link 
+                                    to={`/profile/${author._id}`} 
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        handleProfileClick(author._id);
+                                    }}
+                                    className="username"
                                 >
-                                    发布
-                                </Button>
-                            </CommentInput>
-                        </CommentSection>
-                    </PostCard>
-                )}
+                                    {author.username}
+                                </Link>
+                                <EllipsisOutlined className="more-options" />
+                            </PostHeader>
+                            
+                            {post.image ? (
+                                <PostImage onDoubleClick={() => !likes.includes(user?._id) && handleLike(post._id)}>
+                                    <img src={getFullImageUrl(post.image)} alt="post" />
+                                </PostImage>
+                            ) : (
+                                <PostContent className="no-image">
+                                    {post.content}
+                                </PostContent>
+                            )}
+
+                            <PostActions>
+                                <Space>
+                                    <Button 
+                                        type="text" 
+                                        icon={likes.includes(user?._id) ? <LikeFilled /> : <LikeOutlined />}
+                                        onClick={() => handleLike(post._id)}
+                                    />
+                                    <Button 
+                                        type="text" 
+                                        icon={<CommentOutlined />} 
+                                    />
+                                    <Button 
+                                        type="text" 
+                                        icon={savedBy.includes(user?._id) ? <SaveFilled /> : <SaveOutlined />}
+                                        onClick={() => handleSave(post._id)}
+                                    />
+                                </Space>
+                            </PostActions>
+                            
+                            <PostContent>
+                                <div className="likes">
+                                    {likes.length} 次赞
+                                </div>
+                                <div className="caption">
+                                    <span className="username">{author.username}</span>
+                                    {post.content}
+                                </div>
+                                <div className="timestamp">
+                                    {formatTime(post.createdAt)}
+                                </div>
+                            </PostContent>
+                            
+                            <CommentSection>
+                                <CommentList>
+                                    {comments.map((comment, index) => (
+                                        <div key={`${post._id}-comment-${index}`} className="comment">
+                                            <span className="username">{comment.user?.username || '未知用户'}</span>
+                                            {comment.content}
+                                        </div>
+                                    ))}
+                                </CommentList>
+                                
+                                <CommentInput>
+                                    <TextArea
+                                        value={commentContent[post._id] || ''}
+                                        onChange={e => setCommentContent({
+                                            ...commentContent,
+                                            [post._id]: e.target.value
+                                        })}
+                                        placeholder="添加评论..."
+                                        autoSize
+                                    />
+                                    <Button 
+                                        type="link"
+                                        onClick={() => handleComment(post._id)}
+                                        loading={submitting}
+                                    >
+                                        发布
+                                    </Button>
+                                </CommentInput>
+                            </CommentSection>
+                        </PostCard>
+                    );
+                }}
             />
         </Container>
     );

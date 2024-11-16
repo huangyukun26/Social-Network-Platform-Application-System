@@ -7,6 +7,7 @@ import { theme } from '../../styles/theme';
 import { Badge } from 'antd';
 import axios from 'axios';
 import { formatTime } from '../../utils/timeFormat';
+import { message } from 'antd';
 
 const { Header } = Layout;
 
@@ -92,20 +93,38 @@ const NotificationPopover = styled.div`
 
 const Navbar = () => {
     const navigate = useNavigate();
-    const user = JSON.parse(localStorage.getItem('user'));
+    const [user, setUser] = useState(null);
     const [notifications, setNotifications] = useState([]);
 
+    useEffect(() => {
+        const token = sessionStorage.getItem('token');
+        const sessionId = sessionStorage.getItem('sessionId');
+        const storedUser = JSON.parse(sessionStorage.getItem('user'));
+        
+        if (token && sessionId && storedUser) {
+            setUser(storedUser);
+        } else {
+            setUser(null);
+        }
+    }, []);
+
     const handleLogout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('sessionId');
+        sessionStorage.removeItem('user');
+        sessionStorage.removeItem('tokenExpiry');
+        setUser(null);
         navigate('/login');
     };
 
     const fetchNotifications = async () => {
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             const response = await axios.get('http://localhost:5000/api/friends/requests', {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { 
+                    Authorization: `Bearer ${token}`,
+                    'Session-ID': sessionStorage.getItem('sessionId')
+                }
             });
             setNotifications(response.data);
         } catch (error) {
@@ -120,6 +139,21 @@ const Navbar = () => {
             return () => clearInterval(interval);
         }
     }, [user]);
+
+    const handleProfileClick = (e) => {
+        e.preventDefault();
+        const token = sessionStorage.getItem('token');
+        const sessionId = sessionStorage.getItem('sessionId');
+        const storedUser = JSON.parse(sessionStorage.getItem('user'));
+        
+        if (!token || !sessionId || !storedUser) {
+            message.error('请先登录');
+            navigate('/login');
+            return;
+        }
+        
+        navigate(`/profile/${storedUser._id}`);
+    };
 
     const notificationContent = (
         <NotificationPopover>
@@ -168,7 +202,12 @@ const Navbar = () => {
                             <Link to="/friends">好友</Link>
                         </Menu.Item>
                         <Menu.Item key="/profile" icon={<UserOutlined />}>
-                            <Link to="/profile">个人主页</Link>
+                            <Link 
+                                to={`/profile/${user._id}`} 
+                                onClick={handleProfileClick}
+                            >
+                                个人主页
+                            </Link>
                         </Menu.Item>
                         <Menu.Item key="/notifications">
                             <Popover 

@@ -261,14 +261,20 @@ const Profile = () => {
         if (!userId) return;
         
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
+            const sessionId = sessionStorage.getItem('sessionId');
             let newFollowers = [];
             let newFollowing = [];
 
             if (canViewFollowers) {
                 const followersRes = await axios.get(
                     `http://localhost:5000/api/follow/followers/${userId}`,
-                    { headers: { Authorization: `Bearer ${token}` }}
+                    { 
+                        headers: { 
+                            Authorization: `Bearer ${token}`,
+                            'Session-ID': sessionId
+                        }
+                    }
                 );
                 newFollowers = followersRes.data;
             }
@@ -276,7 +282,12 @@ const Profile = () => {
             if (canViewFollowing) {
                 const followingRes = await axios.get(
                     `http://localhost:5000/api/follow/following/${userId}`,
-                    { headers: { Authorization: `Bearer ${token}` }}
+                    { 
+                        headers: { 
+                            Authorization: `Bearer ${token}`,
+                            'Session-ID': sessionId
+                        }
+                    }
                 );
                 newFollowing = followingRes.data;
             }
@@ -305,8 +316,9 @@ const Profile = () => {
         try {
             setIsDataFetching(true);
             setLoading(true);
-            const token = localStorage.getItem('token');
-            if (!token) {
+            const token = sessionStorage.getItem('token');
+            const sessionId = sessionStorage.getItem('sessionId');
+            if (!token || !sessionId) {
                 navigate('/login');
                 return;
             }
@@ -314,7 +326,12 @@ const Profile = () => {
             // 获取用户资料
             const profileResponse = await axios.get(
                 `http://localhost:5000/api/users/${userId || 'me'}`,
-                { headers: { Authorization: `Bearer ${token}` }}
+                { 
+                    headers: { 
+                        Authorization: `Bearer ${token}`,
+                        'Session-ID': sessionId
+                    }
+                }
             );
             
             const userData = profileResponse.data;
@@ -324,7 +341,12 @@ const Profile = () => {
             if (userId && userId !== currentUserId) {
                 const currentUserResponse = await axios.get(
                     'http://localhost:5000/api/users/me',
-                    { headers: { Authorization: `Bearer ${token}` }}
+                    { 
+                        headers: { 
+                            Authorization: `Bearer ${token}`,
+                            'Session-ID': sessionId
+                        }
+                    }
                 );
                 
                 const isFriend = currentUserResponse.data.friends.includes(userId);
@@ -335,7 +357,12 @@ const Profile = () => {
                     try {
                         const statusResponse = await axios.get(
                             `http://localhost:5000/api/friends/status/${userId}`,
-                            { headers: { Authorization: `Bearer ${token}` }}
+                            { 
+                                headers: { 
+                                    Authorization: `Bearer ${token}`,
+                                    'Session-ID': sessionId
+                                }
+                            }
                         );
                         setFriendshipStatus(statusResponse.data.status);
                         if (statusResponse.data.direction === 'received') {
@@ -354,7 +381,12 @@ const Profile = () => {
                 try {
                     const postsResponse = await axios.get(
                         `http://localhost:5000/api/posts/user/${userId || userData._id}`,
-                        { headers: { Authorization: `Bearer ${token}` }}
+                        { 
+                            headers: { 
+                                Authorization: `Bearer ${token}`,
+                                'Session-ID': sessionId
+                            }
+                        }
                     );
                     setPosts(postsResponse.data);
                 } catch (error) {
@@ -368,14 +400,20 @@ const Profile = () => {
             
             fetchPromises.push(
                 axios.get(`http://localhost:5000/api/follow/${userId || userData._id}/followers`, {
-                    headers: { Authorization: `Bearer ${token}` }
+                    headers: { 
+                        Authorization: `Bearer ${token}`,
+                        'Session-ID': sessionId
+                    }
                 }).then(response => setFollowers(response.data))
                 .catch(() => setFollowers([]))
             );
 
             fetchPromises.push(
                 axios.get(`http://localhost:5000/api/follow/${userId || userData._id}/following`, {
-                    headers: { Authorization: `Bearer ${token}` }
+                    headers: { 
+                        Authorization: `Bearer ${token}`,
+                        'Session-ID': sessionId
+                    }
                 }).then(response => setFollowing(response.data))
                 .catch(() => setFollowing([]))
             );
@@ -388,7 +426,12 @@ const Profile = () => {
                 try {
                     const statusResponse = await axios.get(
                         `http://localhost:5000/api/friends/status/${userId}`,
-                        { headers: { Authorization: `Bearer ${token}` }}
+                        { 
+                            headers: { 
+                                Authorization: `Bearer ${token}`,
+                                'Session-ID': sessionId
+                            }
+                        }
                     );
                     setFriendshipStatus(statusResponse.data.status);
                     if (statusResponse.data.direction === 'received') {
@@ -402,7 +445,12 @@ const Profile = () => {
                 try {
                     const followResponse = await axios.get(
                         `http://localhost:5000/api/follow/status/${userId}`,
-                        { headers: { Authorization: `Bearer ${token}` }}
+                        { 
+                            headers: { 
+                                Authorization: `Bearer ${token}`,
+                                'Session-ID': sessionId
+                            }
+                        }
                     );
                     setIsFollowing(followResponse.data.isFollowing);
                 } catch (error) {
@@ -443,16 +491,27 @@ const Profile = () => {
     // 5. 事件处理函数
     const handleFollow = async () => {
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
+            const sessionId = sessionStorage.getItem('sessionId');
+            if (!token || !sessionId) {
+                message.error('请先登录');
+                navigate('/login');
+                return;
+            }
+
             await axios.post(
                 `http://localhost:5000/api/follow/${userId}`,
                 {},
-                { headers: { Authorization: `Bearer ${token}` }}
+                { 
+                    headers: { 
+                        Authorization: `Bearer ${token}`,
+                        'Session-ID': sessionId
+                    }
+                }
             );
             
             setIsFollowing(!isFollowing);
             message.success(isFollowing ? '已取消关注' : '已关注');
-            // 立即刷新数据
             fetchProfileData();
         } catch (error) {
             console.error('关注操作失败:', error);
@@ -462,24 +521,40 @@ const Profile = () => {
 
     const handleFriendAction = async () => {
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
+            const sessionId = sessionStorage.getItem('sessionId');
+            if (!token || !sessionId) {
+                message.error('请先登录');
+                navigate('/login');
+                return;
+            }
+
             if (friendshipStatus === 'none') {
                 await axios.post(
                     `http://localhost:5000/api/friends/request/${userId}`,
                     {},
-                    { headers: { Authorization: `Bearer ${token}` }}
+                    { 
+                        headers: { 
+                            Authorization: `Bearer ${token}`,
+                            'Session-ID': sessionId
+                        }
+                    }
                 );
                 setFriendshipStatus('pending');
                 message.success('已发送好友请求');
             } else if (friendshipStatus === 'friends') {
                 await axios.delete(
                     `http://localhost:5000/api/friends/${userId}`,
-                    { headers: { Authorization: `Bearer ${token}` }}
+                    { 
+                        headers: { 
+                            Authorization: `Bearer ${token}`,
+                            'Session-ID': sessionId
+                        }
+                    }
                 );
                 setFriendshipStatus('none');
                 message.success('已删除好友');
             }
-            // 刷新数据
             fetchProfileData();
         } catch (error) {
             console.error('好友操作失败:', error);
@@ -494,12 +569,15 @@ const Profile = () => {
 
     // 6. useEffect 钩子
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (token) {
+        const token = sessionStorage.getItem('token');
+        const sessionId = sessionStorage.getItem('sessionId');
+        if (token && sessionId) {
             const decodedToken = jwtDecode(token);
             setCurrentUserId(decodedToken.userId);
+        } else {
+            navigate('/login');
         }
-    }, []);
+    }, [navigate]);
 
     useEffect(() => {
         if (profileData) {
@@ -514,10 +592,16 @@ const Profile = () => {
     const fetchFriendshipStatus = async (retries = 3) => {
         for (let i = 0; i < retries; i++) {
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
+                const sessionId = sessionStorage.getItem('sessionId');
                 const response = await axios.get(
                     `http://localhost:5000/api/friends/status/${userId}`,
-                    { headers: { Authorization: `Bearer ${token}` }}
+                    { 
+                        headers: { 
+                            Authorization: `Bearer ${token}`,
+                            'Session-ID': sessionId
+                        }
+                    }
                 );
                 return response.data;
             } catch (error) {
