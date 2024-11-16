@@ -106,4 +106,36 @@ userSchema.virtual('stats').get(function() {
 userSchema.set('toJSON', { virtuals: true });
 userSchema.set('toObject', { virtuals: true });
 
+userSchema.post('save', async function(doc) {
+    try {
+        const Neo4jService = require('../services/neo4jService');
+        const neo4jService = new Neo4jService();
+        await neo4jService.syncUserToNeo4j(doc._id.toString(), doc.username);
+    } catch (error) {
+        console.error('Neo4j 同步失败:', error);
+    }
+});
+
+// 添加密码加密中间件
+userSchema.pre('save', async function(next) {
+    if (!this.isModified('password')) return next();
+    
+    try {
+        const salt = await bcrypt.genSalt(10);
+        this.password = await bcrypt.hash(this.password, salt);
+        next();
+    } catch (error) {
+        next(error);
+    }
+});
+
+// 添加密码验证方法
+userSchema.methods.comparePassword = async function(candidatePassword) {
+    try {
+        return await bcrypt.compare(candidatePassword, this.password);
+    } catch (error) {
+        throw error;
+    }
+};
+
 module.exports = mongoose.model('User', userSchema); 

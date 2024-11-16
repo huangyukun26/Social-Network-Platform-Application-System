@@ -1,6 +1,8 @@
 const FriendRequest = require('../models/FriendRequest');
 const User = require('../models/User');
 const RedisClient = require('../utils/RedisClient');
+const Neo4jService = require('../services/neo4jService');
+const neo4jService = new Neo4jService();
 
 const friendController = {
     // 获取好友请求列表
@@ -110,6 +112,9 @@ const friendController = {
                 await User.findByIdAndUpdate(request.sender._id, {
                     $addToSet: { friends: req.userId }
                 });
+
+                // 如果接受好友请求，同步到 Neo4j
+                await neo4jService.addFriendship(req.userId, request.sender.toString());
             }
 
             // 返回更新后的好友信息
@@ -128,6 +133,7 @@ const friendController = {
                 updatedFriends: updatedUser.friends
             });
         } catch (error) {
+            console.error('处理好友请求失败:', error);
             res.status(500).json({ message: '处理好友请求失败' });
         }
     },
@@ -206,7 +212,7 @@ const friendController = {
             console.log('找到的推荐用户数量:', suggestionsWithStats.length);
             res.json(suggestionsWithStats);
         } catch (error) {
-            console.error('获取好友推荐失败:', error);
+            console.error('获好友推荐失败:', error);
             res.status(500).json({ 
                 message: '获取好友推败',
                 error: error.message 
@@ -248,6 +254,7 @@ const friendController = {
         try {
             const { friendId } = req.params;
             
+            // MongoDB 操作
             await User.findByIdAndUpdate(req.userId, {
                 $pull: { friends: friendId }
             });
@@ -255,6 +262,9 @@ const friendController = {
             await User.findByIdAndUpdate(friendId, {
                 $pull: { friends: req.userId }
             });
+
+            // Neo4j 操作
+            await neo4jService.removeFriendship(req.userId, friendId);
 
             res.json({ message: '好友已删除' });
         } catch (error) {
@@ -335,6 +345,117 @@ const friendController = {
         } catch (error) {
             console.error('获取用户统计信息失败:', error);
             res.status(500).json({ message: '获取用户统计信息失败' });
+        }
+    },
+
+    // 添加新方法
+    getFriendRecommendationsWithGraph: async (req, res) => {
+        try {
+            // 获取基于图数据库的推荐
+            const graphRecommendations = await neo4jService.getFriendRecommendations(req.userId);
+            
+            // 获取这些用户的详细信息
+            const userDetails = await User.find({
+                _id: { $in: graphRecommendations.map(r => r.userId) }
+            })
+            .select('username avatar bio privacy friends posts likesReceived');
+
+            // 合并推荐信息
+            const recommendations = userDetails.map(user => {
+                const graphData = graphRecommendations.find(r => r.userId === user._id.toString());
+                return {
+                    ...user.toObject(),
+                    commonFriends: graphData.commonFriends,
+                    statistics: {
+                        postsCount: user.posts?.length || 0,
+                        friendsCount: user.friends?.length || 0,
+                        likesCount: user.likesReceived || 0
+                    }
+                };
+            });
+
+            res.json(recommendations);
+        } catch (error) {
+            console.error('获取图数据库好友推荐失败:', error);
+            res.status(500).json({ message: '获取推荐失败' });
+        }
+    },
+
+    getSocialCircleAnalytics: async (req, res) => {
+        try {
+            const analytics = await neo4jService.getSocialCircleAnalytics(req.userId);
+            res.json(analytics);
+        } catch (error) {
+            console.error('获取社交圈分析失败:', error);
+            res.status(500).json({ message: '获取分析失败' });
+        }
+    },
+
+    // 添加新的社交分析方法
+    getCommonFriendsAnalysis: async (req, res) => {
+        try {
+            const { targetUserId } = req.params;
+            const commonFriends = await neo4jService.getCommonFriendsDetails(
+                req.userId,
+                targetUserId
+            );
+
+            // 获取用户详细信息
+            const userIds = commonFriends.map(f => f.userId);
+            const users = await User.find({ _id: { $in: userIds } })
+                .select('username avatar bio');
+
+            // 合并信息
+            const enrichedData = commonFriends.map(friend => ({
+                ...friend,
+                userDetails: users.find(u => u._id.toString() === friend.userId)
+            }));
+
+            res.json(enrichedData);
+        } catch (error) {
+            console.error('获取共同好友分析失败:', error);
+            res.status(500).json({ message: '获取分析失败' });
+        }
+    },
+
+    getSocialCirclesAnalysis: async (req, res) => {
+        try {
+            const circles = await neo4jService.getSocialCircles(req.userId);
+            
+            // 获取圈子成员详细信息
+            const allMemberIds = circles.flatMap(c => c.members);
+            const users = await User.find({ _id: { $in: allMemberIds } })
+                .select('username avatar stats');
+
+            // 合并信息
+            const enrichedCircles = circles.map(circle => ({
+                circle: circle.circle,
+                size: circle.size,
+                members: circle.members.map(memberId => {
+                    const user = users.find(u => u._id.toString() === memberId);
+                    return user ? {
+                        _id: user._id,
+                        username: user.username,
+                        avatar: user.avatar,
+                        stats: user.stats
+                    } : null;
+                }).filter(Boolean)
+            }));
+
+            res.json(enrichedCircles);
+        } catch (error) {
+            console.error('获取社交圈子分析失败:', error);
+            res.status(500).json({ message: '获取分析失败' });
+        }
+    },
+
+    getSocialInfluenceAnalysis: async (req, res) => {
+        try {
+            const influence = await neo4jService.getSocialInfluence(req.userId);
+            res.json(influence);
+        } catch (error) {
+            console.error('获取社交影响力分析失败:', error);
+            res.status(500).json({ message: '获取分析失败' });
         }
     }
 };

@@ -250,6 +250,39 @@ Authorization: Bearer <token>
 }
 ```
 
+### 4.3 获取社交分析数据
+```javascript
+GET /api/friends/analysis
+
+请求头:
+Authorization: Bearer <token>
+
+响应:
+{
+    "circles": [
+        {
+            "type": "close",     // 亲密圈子
+            "members": [User],   // 成员列表
+            "size": number      // 圈子大小
+        },
+        {
+            "type": "distant",  // 普通圈子
+            "members": [User],
+            "size": number
+        }
+    ],
+    "influence": {
+        "totalReach": number,           // 总影响范围
+        "distribution": [               // 影响力分布
+            {
+                "distance": number,     // 社交距离
+                "count": number        // 用户数量
+            }
+        ]
+    }
+}
+```
+
 ## 5. 会话管理
 
 ### 5.1 获取用户会话列表

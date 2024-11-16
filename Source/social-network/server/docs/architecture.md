@@ -15,8 +15,9 @@
 ```
 - Node.js
 - Express.js
-- MongoDB (数据库)
+- MongoDB (主数据库)
 - Redis (缓存)
+- Neo4j (图数据库)
 - JWT (认证)
 ```
 

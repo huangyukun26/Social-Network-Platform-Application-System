@@ -29,6 +29,11 @@ class RedisClient {
     }
 
     async startMetricsCollection() {
+        // 在测试环境下不启动指标收集
+        if (process.env.NODE_ENV === 'test') {
+            return;
+        }
+
         // 清除已存在的定时器
         if (this.metricsInterval) {
             clearInterval(this.metricsInterval);
@@ -213,9 +218,14 @@ class RedisClient {
             clearInterval(this.metricsInterval);
             this.metricsInterval = null;
         }
+        
         // 重置指标
         this.resetMetrics();
-        // 不要关闭Redis连接，因为可能其他地方还在使用
+        
+        // 在测试环境下关闭 Redis 连接
+        if (process.env.NODE_ENV === 'test') {
+            await this.client.quit();
+        }
     }
 
     // 添加分布式会话管理
@@ -358,6 +368,63 @@ class RedisClient {
             console.error('删除会话失败:', error);
         }
     }
+
+    // 添加新的会话管理方法，与测试用例匹配
+    async createSession(userId, sessionId) {
+        try {
+            const key = `session:${userId}:${sessionId}`;
+            await this.client.hmset(key, {
+                userId,
+                sessionId,
+                createdAt: Date.now(),
+                lastActive: Date.now()
+            });
+            await this.client.expire(key, 24 * 60 * 60); // 24小时过期
+            return true;
+        } catch (error) {
+            console.error('创建会话失败:', error);
+            return false;
+        }
+    }
+
+    async deleteSession(userId, sessionId) {
+        try {
+            const key = `session:${userId}:${sessionId}`;
+            await this.client.del(key);
+            return true;
+        } catch (error) {
+            console.error('删除会话失败:', error);
+            return false;
+        }
+    }
+
+    // 确保在进程退出时清理资源
+    async gracefulShutdown() {
+        await this.cleanup();
+        // 不要关闭 Redis 连接，因为可能其他地方还在使用
+    }
+
+    // 添加测试辅助方法
+    async clearTestData() {
+        if (process.env.NODE_ENV === 'test') {
+            const keys = await this.client.keys('test:*');
+            if (keys.length > 0) {
+                await this.client.del(keys);
+            }
+        }
+    }
 }
 
-module.exports = new RedisClient(); 
+// 创建单例实例
+const redisClient = new RedisClient();
+
+// 确保在进程退出时进行清理
+process.on('SIGTERM', async () => {
+    await redisClient.gracefulShutdown();
+});
+
+process.on('SIGINT', async () => {
+    await redisClient.gracefulShutdown();
+});
+
+module.exports = redisClient; 

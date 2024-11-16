@@ -6,6 +6,7 @@ import FriendsList from './FriendsList';
 import FriendSuggestions from './FriendSuggestions';
 import UserSearch from './UserSearch';
 import axios from 'axios';
+import SocialAnalytics from './Analytics/SocialAnalytics';
 
 const { TabPane } = Tabs;
 
@@ -77,6 +78,9 @@ const Friends = () => {
           <FriendSuggestions 
             onUpdate={fetchFriendData}
           />
+        </TabPane>
+        <TabPane tab="社交分析" key="4">
+          <SocialAnalytics />
         </TabPane>
       </Tabs>
     </FriendsContainer>

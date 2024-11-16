@@ -12,7 +12,11 @@
     "migrate:role": "node scripts/migrations/addRoleField.js",
     "create:admin": "node scripts/createAdmin.js",
     "test:metrics": "cross-env NODE_ENV=test jest tests/cache/metrics.test.js --detectOpenHandles --forceExit --verbose",
-    "test:monitor": "cross-env NODE_ENV=test jest tests/admin/cache-monitor.test.js --detectOpenHandles --forceExit --verbose"
+    "test:monitor": "cross-env NODE_ENV=test jest tests/admin/cache-monitor.test.js --detectOpenHandles --forceExit --verbose",
+    "sync:data": "node scripts/data-sync/syncData.js",
+    "sync:validate": "node scripts/data-sync/validateData.js",
+    "test:neo4j": "cross-env NODE_ENV=test jest tests/neo4j --detectOpenHandles --forceExit --verbose",
+    "seed": "node server/scripts/seedData.js"
   },
   "keywords": [],
   "author": "",
@@ -25,7 +29,8 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "mongoose": "^8.8.1",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "neo4j-driver": "^4.4.0"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",

@@ -158,6 +158,32 @@ async function handleFriendRequest(userId, friendId, action) {
 }
 ```
 
+## 3.3 社交分析系统 ✅
+
+### 3.3.1 社交圈子分析
+```javascript
+// 社交圈子分析逻辑
+async function analyzeSocialCircles(userId) {
+    const circles = await neo4jService.getSocialCircles(userId);
+    return {
+        close: circles.filter(c => c.type === 'close'),
+        distant: circles.filter(c => c.type === 'distant')
+    };
+}
+```
+
+### 3.3.2 影响力分析
+```javascript
+// 社交影响力分析逻辑
+async function analyzeSocialInfluence(userId) {
+    const influence = await neo4jService.getSocialInfluence(userId);
+    return {
+        totalReach: influence.totalReach,
+        distribution: influence.distribution
+    };
+}
+```
+
 ## 4. 管理员系统 ✅
 
 ### 4.1 权限控制

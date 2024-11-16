@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const friendController = require('../controllers/friendController');
 const User = require('../models/User');
 const RedisClient = require('../utils/RedisClient');
+const Neo4jService = require('../services/neo4jService');
 
 // 添加好友隐私检查中间件
 const checkFriendPrivacy = async (req, res, next) => {
@@ -63,5 +64,14 @@ router.delete('/:friendId', auth, friendController.removeFriend);
 
 // 添加获取好友状态的路由
 router.get('/status/:userId', auth, checkFriendPrivacy, friendController.getFriendshipStatus);
+
+// Neo4j 相关路由
+router.get('/recommendations/graph', auth, friendController.getFriendRecommendationsWithGraph);
+router.get('/analytics/social-circle', auth, friendController.getSocialCircleAnalytics);
+
+// 添加新的社交分析路由
+router.get('/analysis/common/:targetUserId', auth, friendController.getCommonFriendsAnalysis);
+router.get('/analysis/circles', auth, friendController.getSocialCirclesAnalysis);
+router.get('/analysis/influence', auth, friendController.getSocialInfluenceAnalysis);
 
 module.exports = router; 

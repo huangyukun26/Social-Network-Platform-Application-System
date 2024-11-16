@@ -376,7 +376,7 @@ token:{userId}:{deviceId}     // Token键
 2. 数据一致性
    - 合理使用事务
    - 同步策略选择
-   - 并发控制
+   - 并发控��
 
 3. 性能问题
    - 避免大规模查询
@@ -428,3 +428,25 @@ token:{userId}:{deviceId}     // Token键
    - 需要实现完整的监控系统
    - 添加性能指标采集
    - 实现告警机制
+
+### 1.3 Neo4j 图数据库 ✅
+```javascript
+// 社交关系图谱
+{
+    nodes: User,           // 用户节点
+    relationships: {
+        FRIEND: {         // 好友关系
+            from: User,
+            to: User,
+            properties: {
+                since: Date
+            }
+        }
+    }
+}
+
+// 主要查询
+- 社交圈子分析
+- 影响力分布计算
+- 好友关系路径
+```
