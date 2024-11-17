@@ -67,6 +67,12 @@ const friendController = {
         try {
             const { userId } = req.params;
             
+            // 检查是否已经是好友
+            const user = await User.findById(req.userId);
+            if (user.friends.includes(userId)) {
+                return res.status(400).json({ message: '已经是好友了' });
+            }
+            
             // 检查是否已经发送过请求
             const existingRequest = await FriendRequest.findOne({
                 sender: req.userId,
@@ -86,6 +92,7 @@ const friendController = {
             await newRequest.save();
             res.json({ message: '好友请求已发送' });
         } catch (error) {
+            console.error('发送好友请求失败:', error);
             res.status(500).json({ message: '发送好友请求失败' });
         }
     },
@@ -105,37 +112,73 @@ const friendController = {
                 return res.status(403).json({ message: '无权处理该请求' });
             }
 
+            // 更新请求状态
             request.status = action === 'accept' ? 'accepted' : 'rejected';
             await request.save();
 
             if (action === 'accept') {
                 // 更新双方的好友列表
-                await User.findByIdAndUpdate(req.userId, {
-                    $addToSet: { friends: request.sender._id }
-                });
-                await User.findByIdAndUpdate(request.sender._id, {
-                    $addToSet: { friends: req.userId }
-                });
+                await Promise.all([
+                    User.findByIdAndUpdate(req.userId, {
+                        $addToSet: { friends: request.sender._id }
+                    }),
+                    User.findByIdAndUpdate(request.sender._id, {
+                        $addToSet: { friends: req.userId }
+                    })
+                ]);
 
-                // 如果接受好友请求，同步到 Neo4j
-                await neo4jService.addFriendship(req.userId, request.sender.toString());
+                // 同步到 Neo4j
+                try {
+                    await neo4jService.addFriendship(req.userId, request.sender._id.toString());
+                } catch (neoError) {
+                    console.error('Neo4j同步失败:', neoError);
+                }
+
+                // 清除相关缓存
+                try {
+                    await Promise.all([
+                        redisClient.clearFriendsCache(req.userId),
+                        redisClient.clearFriendsCache(request.sender._id.toString()),
+                        redisClient.invalidateFriendCache(req.userId),
+                        redisClient.invalidateFriendCache(request.sender._id.toString())
+                    ]);
+                } catch (cacheError) {
+                    console.error('缓存清理失败:', cacheError);
+                }
             }
 
-            // 返回更新后的好友信息
-            const updatedUser = await User.findById(req.userId)
-                .populate({
-                    path: 'friends',
-                    select: 'username avatar bio posts friends likesReceived',
-                    populate: {
-                        path: 'posts',
-                        select: 'likes comments'
+            // 获取更新后的请求列表
+            const updatedRequests = await FriendRequest.find({
+                receiver: req.userId,
+                status: 'pending'  // 只获取待处理的请求
+            }).populate({
+                path: 'sender',
+                select: 'username avatar bio posts friends likesReceived'
+            });
+
+            // 格式化请求列表
+            const formattedRequests = updatedRequests.map(req => ({
+                _id: req._id,
+                sender: {
+                    _id: req.sender._id,
+                    username: req.sender.username,
+                    avatar: req.sender.avatar,
+                    bio: req.sender.bio,
+                    statistics: {
+                        postsCount: req.sender.posts?.length || 0,
+                        friendsCount: req.sender.friends?.length || 0,
+                        likesCount: req.sender.likesReceived || 0
                     }
-                });
+                },
+                status: req.status,
+                createdAt: req.createdAt
+            }));
 
             res.json({
                 message: action === 'accept' ? '已接受好友请求' : '已拒绝好友请求',
-                updatedFriends: updatedUser.friends
+                updatedRequests: formattedRequests
             });
+
         } catch (error) {
             console.error('处理好友请求失败:', error);
             res.status(500).json({ message: '处理好友请求失败' });
@@ -211,20 +254,35 @@ const friendController = {
             const { friendId } = req.params;
             const userId = req.userId;
 
-            // 从 MongoDB 中删除好友关系
-            await User.findByIdAndUpdate(userId, {
-                $pull: { friends: friendId }
-            });
-            await User.findByIdAndUpdate(friendId, {
-                $pull: { friends: userId }
-            });
+            // 验证好友关系是否存在
+            const user = await User.findById(userId);
+            if (!user || !user.friends.includes(friendId)) {
+                return res.status(404).json({ message: '好友关系不存在' });
+            }
+
+            // 从双方的好友列表中移除
+            await Promise.all([
+                User.findByIdAndUpdate(userId, {
+                    $pull: { friends: friendId }
+                }),
+                User.findByIdAndUpdate(friendId, {
+                    $pull: { friends: userId }
+                })
+            ]);
+
+            // 清除双方的缓存
+            await Promise.all([
+                redisClient.clearFriendsCache(userId),
+                redisClient.clearFriendsCache(friendId)
+            ]);
 
             // 从 Neo4j 中删除好友关系
-            await neo4jService.removeFriendship(userId, friendId);
-
-            // 清除缓存
-            await redisClient.clearFriendsCache(userId);
-            await redisClient.clearFriendsCache(friendId);
+            try {
+                await neo4jService.removeFriendship(userId, friendId);
+            } catch (neoError) {
+                console.error('Neo4j删除好友关系失败:', neoError);
+                // 继续执行，不影响主流程
+            }
 
             res.json({ message: '好友删除成功' });
         } catch (error) {
@@ -560,7 +618,7 @@ const friendController = {
             console.log('数据同步完成');
             res.json({ message: '数据同步成功' });
         } catch (error) {
-            console.error('数据同步失败:', error);
+            console.error('数据同步失���:', error);
             res.status(500).json({ 
                 message: '数据同步失败',
                 error: error.message 

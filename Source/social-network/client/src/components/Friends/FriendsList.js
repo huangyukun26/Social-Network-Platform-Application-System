@@ -131,7 +131,7 @@ const FriendsList = ({ friends, loading, onFriendUpdate }) => {
     const handleRemoveFriend = async (friendId) => {
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`/api/friends/${friendId}`, {
+            await axios.delete(`http://localhost:5000/api/friends/${friendId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 

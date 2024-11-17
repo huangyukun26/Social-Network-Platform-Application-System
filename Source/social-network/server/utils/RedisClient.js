@@ -613,6 +613,36 @@ class RedisClient {
         ];
         await this.client.del(keys);
     }
+
+    // 添加 clearFriendsCache 方法
+    async clearFriendsCache(userId) {
+        try {
+            console.log('清理好友缓存:', userId);
+            const keys = [
+                `friends:list:${userId}`,
+                `friend:*:${userId}`,
+                `friendship:${userId}:*`,
+                `friend:recommendations:${userId}`,
+                `friend:smart-recommendations:${userId}`,
+                `friends:online:${userId}`
+            ];
+
+            // 并行删除所有相关缓存
+            const deletePromises = keys.map(async pattern => {
+                const matchedKeys = await this.client.keys(pattern);
+                if (matchedKeys.length > 0) {
+                    console.log(`删除缓存键: ${matchedKeys.join(', ')}`);
+                    await this.client.del(matchedKeys);
+                }
+            });
+
+            await Promise.all(deletePromises);
+            console.log('好友缓存清理完成:', userId);
+        } catch (error) {
+            console.error('清理好友缓存失败:', error);
+            // 不抛出错误，避免影响主流程
+        }
+    }
 }
 
 // 创建单例实例
