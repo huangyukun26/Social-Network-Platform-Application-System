@@ -446,9 +446,19 @@ const friendController = {
 
             // 从 Neo4j 获取分析数据
             const influenceData = await neo4jService.analyzeSocialInfluence(userId);
-            
+            console.log('Neo4j返回的影响力数据:', influenceData);
+
             if (!influenceData) {
-                return res.status(404).json({ message: '无法获取社交影响力数据' });
+                // 返回默认数据结构
+                const defaultData = {
+                    totalReach: 0,
+                    distribution: [
+                        { level: 1, count: 0 },
+                        { level: 2, count: 0 },
+                        { level: 3, count: 0 }
+                    ]
+                };
+                return res.json(defaultData);
             }
 
             // 缓存结果
@@ -458,7 +468,15 @@ const friendController = {
             res.json(influenceData);
         } catch (error) {
             console.error('获取社交影响力分析失败:', error);
-            res.status(500).json({ message: '获取社交影响力分析失败' });
+            // 返回默认数据而不是错误
+            res.json({
+                totalReach: 0,
+                distribution: [
+                    { level: 1, count: 0 },
+                    { level: 2, count: 0 },
+                    { level: 3, count: 0 }
+                ]
+            });
         }
     },
 
@@ -757,16 +775,6 @@ const friendController = {
         }
     },
 
-    // 获取用户影响力分析
-    getSocialInfluenceAnalysis: async (req, res) => {
-        try {
-            const influence = await neo4jService.calculateInfluenceScore(req.userId);
-            res.json(influence);
-        } catch (error) {
-            console.error('获取影响力分析失败:', error);
-            res.status(500).json({ message: '获取分析失败' });
-        }
-    },
 
     // 创建好友分组
     createFriendGroup: async (req, res) => {
@@ -865,7 +873,7 @@ const friendController = {
                 lastActive: new Date()
             });
 
-            // 清除相关的好友在线状态缓存
+            // 清除相��的好友在线状态缓存
             const user = await User.findById(userId);
             for (const friendId of user.friends) {
                 await redisClient.invalidateFriendCache(friendId.toString());
@@ -1080,46 +1088,6 @@ const friendController = {
         }
     },
 
-    // 获取社交影响力分析
-    getInfluenceAnalysis: async (req, res) => {
-        try {
-            const userId = req.userId;
-            
-            // 尝试从缓存获取
-            const cachedData = await redisClient.getSocialInfluence(userId);
-            if (cachedData) {
-                return res.json(cachedData);
-            }
-
-            // 计算影响力数据
-            const user = await User.findById(userId).populate('friends');
-            const totalReach = user.friends.length;
-            
-            // 获取二度和三度好友数量
-            const extendedNetwork = await neo4jService.getExtendedNetwork(userId);
-            
-            const distribution = [
-                { distance: 1, count: totalReach },
-                ...extendedNetwork.map(item => ({
-                    distance: item.distance,
-                    count: item.count
-                }))
-            ];
-
-            const influenceData = {
-                totalReach,
-                distribution
-            };
-
-            // 缓存结果
-            await redisClient.setSocialInfluence(userId, influenceData);
-            
-            res.json(influenceData);
-        } catch (error) {
-            console.error('获取社交影响力分析失败:', error);
-            res.status(500).json({ message: '获取社交影响力分析失败' });
-        }
-    }
 };
 
 module.exports = friendController; 
