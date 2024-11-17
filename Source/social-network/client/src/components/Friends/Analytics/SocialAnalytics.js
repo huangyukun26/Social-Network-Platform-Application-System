@@ -49,23 +49,30 @@ const SocialAnalytics = ({ friends }) => {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
       
-      await axios.post('http://localhost:5000/api/friends/sync', {}, { headers });
-      
-      const [circlesRes, influenceRes, activityRes] = await Promise.all([
-        axios.get('http://localhost:5000/api/friends/analysis/circles', { headers }),
-        axios.get('http://localhost:5000/api/friends/analysis/influence', { headers }),
-        axios.get('http://localhost:5000/api/friends/activity', { headers })
+      // 添加社交圈子数据的获取
+      const [activityRes, influenceRes, circlesRes] = await Promise.all([
+        axios.get('http://localhost:5000/api/friends/activity', { headers }),
+        axios.get('http://localhost:5000/api/friends/influence-analysis', { headers }),
+        axios.get('http://localhost:5000/api/friends/analysis/circles', { headers })
       ]);
 
-      console.log('Circles data:', circlesRes.data);
-      console.log('Influence data:', influenceRes.data);
       console.log('Activity data:', activityRes.data);
+      console.log('Influence data:', influenceRes.data);
+      console.log('Circles data:', circlesRes.data);
 
-      setAnalyticsData({
-        circles: circlesRes.data,
-        influence: influenceRes.data
+      // 更新活跃度数据，使用可选链和默认值
+      setActivityData({
+        friendsCount: friends?.length ?? 0,
+        interactionsCount: activityRes.data?.interactionsCount ?? 0,
+        activityScore: activityRes.data?.activityScore ?? 0
       });
-      setActivityData(activityRes.data);
+      
+      // 更新影响力数据
+      setAnalyticsData(prev => ({
+        ...prev,
+        influence: influenceRes.data,
+        circles: circlesRes.data || [] // 添加社交圈子数据
+      }));
       
     } catch (error) {
       console.error('获取社交分析数据失败:', error);
@@ -76,25 +83,11 @@ const SocialAnalytics = ({ friends }) => {
     }
   };
 
-  const fetchRelationshipStrength = async (friendId) => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(
-        `http://localhost:5000/api/friends/relationship-strength/${friendId}`,
-        { headers: { Authorization: `Bearer ${token}` }}
-      );
-      setRelationshipData(response.data);
-    } catch (error) {
-      console.error('获取关系强度数据失败:', error);
-      message.error('获取关系强度数据失败');
-    }
-  };
-
+  // 修改 useEffect，添加空数组作为默认值
   useEffect(() => {
-    if (friends?.length >= 0) {
-      fetchAnalytics();
-    }
-  }, [friends?.length]);
+    // 即使 friends 未定义也执行
+    fetchAnalytics();
+  }, [friends]); // friends 可能为 undefined
 
   if (loading) {
     return (
@@ -117,7 +110,8 @@ const SocialAnalytics = ({ friends }) => {
     );
   }
 
-  if (!analyticsData.circles.length && !analyticsData.influence) {
+  // 修改判断条件，使用可选链
+  if (!analyticsData?.influence && !activityData) {
     return (
       <Empty
         description="暂无社交分析数据"
@@ -134,14 +128,11 @@ const SocialAnalytics = ({ friends }) => {
       </div>
       <AnalyticsContainer>
         <ActivityAnalysis data={activityData} />
+        <SocialInfluence data={analyticsData.influence} />
         <SocialCircles 
           data={analyticsData.circles} 
-          onMemberClick={(member) => {
-            setSelectedFriend(member);
-            fetchRelationshipStrength(member._id);
-          }}
+          onMemberClick={(member) => setSelectedFriend(member)}
         />
-        <SocialInfluence data={analyticsData.influence} />
         {selectedFriend && (
           <RelationshipStrength 
             data={relationshipData} 

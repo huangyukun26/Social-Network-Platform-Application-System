@@ -20,7 +20,7 @@ const ActivityAnalysis = ({ data }) => {
         <Col span={8}>
           <Statistic
             title="好友数量"
-            value={data.friendCount}
+            value={data.friendsCount || 0}
             prefix={<UserOutlined />}
             valueStyle={{ color: '#1890ff' }}
           />
@@ -28,7 +28,7 @@ const ActivityAnalysis = ({ data }) => {
         <Col span={8}>
           <Statistic
             title="互动次数"
-            value={data.interactionCount}
+            value={data.interactionsCount || 0}
             prefix={<InteractionOutlined />}
             valueStyle={{ color: '#52c41a' }}
           />
@@ -36,7 +36,7 @@ const ActivityAnalysis = ({ data }) => {
         <Col span={8}>
           <Statistic
             title="活跃度评分"
-            value={parseFloat(data.activityScore).toFixed(2)}
+            value={parseFloat(data.activityScore || 0).toFixed(2)}
             prefix={<LineChartOutlined />}
             valueStyle={{ color: '#722ed1' }}
             suffix="/100"

@@ -367,6 +367,7 @@ class Neo4jService {
   async analyzeSocialInfluence(userId) {
     const session = this.driver.session();
     try {
+      console.log('开始分析社交影响力，用户ID:', userId);
       const result = await session.run(`
         MATCH (u:User {userId: $userId})
         OPTIONAL MATCH (u)-[:FRIEND]->(direct:User)
@@ -380,26 +381,25 @@ class Neo4jService {
             collect(DISTINCT direct) as directFriends,
             count(DISTINCT direct) as directCount,
             count(DISTINCT secondary) as secondaryCount,
-            count(DISTINCT tertiary) as tertiaryCount,
-            reduce(s = 0.0, f in collect(DISTINCT direct) | s + f.activityScore) as networkActivity
+            count(DISTINCT tertiary) as tertiaryCount
         RETURN {
             distribution: [
-                {distance: 1, count: directCount},
-                {distance: 2, count: secondaryCount},
-                {distance: 3, count: tertiaryCount}
+                {level: 1, count: directCount},
+                {level: 2, count: secondaryCount},
+                {level: 3, count: tertiaryCount}
             ],
             totalReach: directCount + secondaryCount + tertiaryCount,
-            networkActivity: networkActivity,
             influenceScore: (directCount * 0.5 + 
                            secondaryCount * 0.3 + 
-                           tertiaryCount * 0.2 + 
-                           networkActivity * 0.2) / 
+                           tertiaryCount * 0.2) / 
                            CASE WHEN directCount > 0 THEN directCount 
                                 ELSE 1 END
         } as influence
-      `, { userId });
+      `, { userId: String(userId) });
 
-      return result.records[0]?.get('influence');
+      const influence = result.records[0]?.get('influence');
+      console.log('社交影响力分析结果:', influence);
+      return influence;
     } finally {
       await session.close();
     }

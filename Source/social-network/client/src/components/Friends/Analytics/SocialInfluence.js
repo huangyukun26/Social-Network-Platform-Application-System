@@ -30,7 +30,9 @@ const DistributionItem = styled.div`
 `;
 
 const SocialInfluence = ({ data }) => {
-  if (!data || (!data.totalReach && (!data.distribution || !data.distribution.length))) {
+  console.log('Social influence data:', data);
+  
+  if (!data || !data.distribution) {
     return (
       <InfluenceCard title="社交影响力">
         <Empty 
@@ -41,8 +43,11 @@ const SocialInfluence = ({ data }) => {
     );
   }
 
-  const getProgressColor = (distance) => {
-    switch(distance) {
+  const distribution = Array.isArray(data.distribution) ? data.distribution : [];
+  const maxCount = Math.max(...distribution.map(d => d.count || 0), 1);
+
+  const getProgressColor = (level) => {
+    switch(level) {
       case 1: return '#52c41a';
       case 2: return '#1890ff';
       case 3: return '#722ed1';
@@ -50,16 +55,14 @@ const SocialInfluence = ({ data }) => {
     }
   };
 
-  const getDegreeLabel = (distance) => {
-    switch(distance) {
+  const getDegreeLabel = (level) => {
+    switch(level) {
       case 1: return '一度人脉';
       case 2: return '二度人脉';
       case 3: return '三度人脉';
-      default: return `${distance}度人脉`;
+      default: return `${level}度人脉`;
     }
   };
-
-  const maxCount = Math.max(...data.distribution.map(d => d.count));
 
   return (
     <InfluenceCard title="社交影响力">
@@ -67,22 +70,24 @@ const SocialInfluence = ({ data }) => {
         <Col span={24}>
           <Statistic 
             title="总影响范围" 
-            value={data.totalReach} 
+            value={data.totalReach || 0} 
             suffix="人"
             valueStyle={{ color: '#1890ff', fontSize: 32 }}
           />
         </Col>
         <Col span={24}>
           <h4 style={{ marginBottom: 16 }}>影响力分布</h4>
-          {data.distribution.map((item, index) => (
-            <DistributionItem key={index}>
+          {distribution.map((item) => (
+            <DistributionItem key={item.level || item.distance}>
               <div className="label">
-                <span className="degree">{getDegreeLabel(item.distance)}</span>
-                <span className="count">{item.count}人</span>
+                <span className="degree">
+                  {getDegreeLabel(item.level || item.distance)}
+                </span>
+                <span className="count">{item.count || 0}人</span>
               </div>
               <Progress 
-                percent={(item.count / maxCount) * 100} 
-                strokeColor={getProgressColor(item.distance)}
+                percent={((item.count || 0) / maxCount) * 100} 
+                strokeColor={getProgressColor(item.level || item.distance)}
                 showInfo={false}
               />
             </DistributionItem>

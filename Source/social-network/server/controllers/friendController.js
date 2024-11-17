@@ -434,11 +434,31 @@ const friendController = {
 
     getSocialInfluenceAnalysis: async (req, res) => {
         try {
-            const influence = await neo4jService.analyzeSocialInfluence(req.userId);
-            res.json(influence);
+            const userId = req.userId;
+            console.log('开始获取社交影响力分析，用户ID:', userId);
+
+            // 尝试从缓存获取
+            const cachedData = await redisClient.getSocialInfluence(userId);
+            if (cachedData) {
+                console.log('返回缓存的社交影响力数据');
+                return res.json(cachedData);
+            }
+
+            // 从 Neo4j 获取分析数据
+            const influenceData = await neo4jService.analyzeSocialInfluence(userId);
+            
+            if (!influenceData) {
+                return res.status(404).json({ message: '无法获取社交影响力数据' });
+            }
+
+            // 缓存结果
+            await redisClient.setSocialInfluence(userId, influenceData);
+            
+            console.log('返回新的社交影响力数据');
+            res.json(influenceData);
         } catch (error) {
             console.error('获取社交影响力分析失败:', error);
-            res.status(500).json({ message: '获取分析失败' });
+            res.status(500).json({ message: '获取社交影响力分析失败' });
         }
     },
 
@@ -719,7 +739,7 @@ const friendController = {
             const { targetUserId } = req.params;
             const path = await neo4jService.findShortestPath(req.userId, targetUserId);
             
-            // 获取路径���用户的详细信息
+            // 获取路径用户的详细信息
             const userIds = path.map(p => p.userId);
             const users = await User.find({ _id: { $in: userIds } })
                 .select('username avatar');
