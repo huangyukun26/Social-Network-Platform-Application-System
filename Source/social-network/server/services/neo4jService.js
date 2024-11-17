@@ -34,64 +34,20 @@ class Neo4jService {
   }
 
   async addFriendship(userId1, userId2) {
-    const session = this.driver.session();
-    try {
-      await session.run(`
-        MATCH (u1:User {userId: $userId1})
-        MATCH (u2:User {userId: $userId2})
-        MERGE (u1)-[r:FRIEND]->(u2)
-        MERGE (u2)-[r2:FRIEND]->(u1)
-        RETURN r, r2
-      `, { userId1, userId2 });
-    } finally {
-      await session.close();
-    }
+    return this.withRetry(() => this.executeQuery(`
+      MATCH (u1:User {userId: $userId1})
+      MATCH (u2:User {userId: $userId2})
+      MERGE (u1)-[r:FRIEND]->(u2)
+      MERGE (u2)-[r2:FRIEND]->(u1)
+      RETURN r, r2
+    `, { userId1, userId2 }));
   }
 
   async removeFriendship(userId1, userId2) {
-    const session = this.driver.session();
-    try {
-      await session.run(`
-        MATCH (u1:User {userId: $userId1})-[r:FRIEND]-(u2:User {userId: $userId2})
-        DELETE r
-      `, { userId1, userId2 });
-    } finally {
-      await session.close();
-    }
-  }
-
-  async getFriendRecommendations(userId) {
-    const session = this.driver.session();
-    try {
-      const result = await session.run(`
-        MATCH (u:User {userId: $userId})-[:FRIEND]-(friend)-[:FRIEND]-(potentialFriend)
-        WHERE NOT (u)-[:FRIEND]-(potentialFriend)
-        AND u <> potentialFriend
-        WITH DISTINCT potentialFriend, count(DISTINCT friend) as commonFriends
-        RETURN 
-          potentialFriend.userId as userId,
-          potentialFriend.username as username,
-          potentialFriend.avatar as avatar,
-          toInteger(commonFriends) as commonFriendsCount
-        ORDER BY commonFriends DESC
-        LIMIT toInteger($limit)
-      `, { 
-        userId: String(userId),
-        limit: 10
-      });
-
-      return result.records.map(record => ({
-        userId: record.get('userId'),
-        username: record.get('username'),
-        avatar: record.get('avatar'),
-        commonFriendsCount: record.get('commonFriendsCount')
-      }));
-    } catch (error) {
-      console.error('获取推荐失败:', error);
-      return [];
-    } finally {
-      await session.close();
-    }
+    return this.withRetry(() => this.executeQuery(`
+      MATCH (u1:User {userId: $userId1})-[r:FRIEND]-(u2:User {userId: $userId2})
+      DELETE r
+    `, { userId1, userId2 }));
   }
 
   async getSocialCircleAnalytics(userId) {
@@ -407,30 +363,39 @@ class Neo4jService {
     }
   }
 
-  // 获取社交影响力分析
+  // 获社交影响力分析
   async analyzeSocialInfluence(userId) {
     const session = this.driver.session();
     try {
       const result = await session.run(`
         MATCH (u:User {userId: $userId})
-        OPTIONAL MATCH (u)-[:FRIEND]-(direct:User)
-        OPTIONAL MATCH (u)-[:FRIEND]-()-[:FRIEND]-(indirect:User)
-        WHERE u <> indirect AND NOT (u)-[:FRIEND]-(indirect)
+        OPTIONAL MATCH (u)-[:FRIEND]->(direct:User)
+        OPTIONAL MATCH (u)-[:FRIEND]->()-[:FRIEND]->(secondary:User)
+        WHERE NOT (u)-[:FRIEND]->(secondary) AND u <> secondary
+        OPTIONAL MATCH (u)-[:FRIEND]->()-[:FRIEND]->()-[:FRIEND]->(tertiary:User)
+        WHERE NOT (u)-[:FRIEND]->(tertiary) 
+        AND NOT (u)-[:FRIEND]->()-[:FRIEND]->(tertiary)
+        AND u <> tertiary
         WITH u,
-             count(DISTINCT direct) as directConnections,
-             count(DISTINCT indirect) as indirectConnections,
-             collect(DISTINCT direct) as directFriends
-        WITH u, directConnections, indirectConnections, directFriends,
-             reduce(s = 0.0, f in directFriends | s + f.activityScore) as networkActivity
+            collect(DISTINCT direct) as directFriends,
+            count(DISTINCT direct) as directCount,
+            count(DISTINCT secondary) as secondaryCount,
+            count(DISTINCT tertiary) as tertiaryCount,
+            reduce(s = 0.0, f in collect(DISTINCT direct) | s + f.activityScore) as networkActivity
         RETURN {
-          directConnections: directConnections,
-          indirectConnections: indirectConnections,
-          networkActivity: networkActivity,
-          influenceScore: (directConnections * 0.5 + 
-                          indirectConnections * 0.3 + 
-                          networkActivity * 0.2) / 
-                          CASE WHEN directConnections > 0 THEN directConnections 
-                               ELSE 1 END
+            distribution: [
+                {distance: 1, count: directCount},
+                {distance: 2, count: secondaryCount},
+                {distance: 3, count: tertiaryCount}
+            ],
+            totalReach: directCount + secondaryCount + tertiaryCount,
+            networkActivity: networkActivity,
+            influenceScore: (directCount * 0.5 + 
+                           secondaryCount * 0.3 + 
+                           tertiaryCount * 0.2 + 
+                           networkActivity * 0.2) / 
+                           CASE WHEN directCount > 0 THEN directCount 
+                                ELSE 1 END
         } as influence
       `, { userId });
 
@@ -466,34 +431,27 @@ class Neo4jService {
     try {
       const result = await session.run(`
         MATCH (u:User {userId: $userId})-[:FRIEND]->(friend)-[:FRIEND]->(friendOfFriend)
-        WHERE NOT (u)-[:FRIEND]->(friendOfFriend)
+        WHERE NOT (u)-[:FRIEND]-(friendOfFriend)
         AND u <> friendOfFriend
-        AND NOT exists((u)-[:FRIEND_REQUEST]->(friendOfFriend))
-        WITH DISTINCT friendOfFriend, count(DISTINCT friend) as commonFriends,
-             collect(DISTINCT friend.userId) as commonFriendIds
-        RETURN 
-          friendOfFriend.userId as recommendedUserId,
-          friendOfFriend.username as username,
-          friendOfFriend.avatar as avatar,
-          toInteger(commonFriends) as commonFriendsCount,
-          commonFriendIds
+        AND NOT exists((u)-[:FRIEND_REQUEST]-(friendOfFriend))
+        WITH DISTINCT friendOfFriend, 
+                     count(DISTINCT friend) as commonFriends,
+                     collect(DISTINCT friend.userId) as commonFriendIds
         ORDER BY commonFriends DESC
         LIMIT toInteger($limit)
+        RETURN {
+            userId: friendOfFriend.userId,
+            username: friendOfFriend.username,
+            avatar: friendOfFriend.avatar,
+            commonFriendsCount: commonFriends,
+            commonFriendIds: commonFriendIds
+        } as recommendation
       `, { 
         userId: String(userId),
-        limit: 10  // 确保是整数
+        limit: 10
       });
 
-      return result.records.map(record => ({
-        userId: record.get('recommendedUserId'),
-        username: record.get('username'),
-        avatar: record.get('avatar'),
-        commonFriendsCount: record.get('commonFriendsCount'),
-        commonFriendIds: record.get('commonFriendIds')
-      }));
-    } catch (error) {
-      console.error('获取好友推荐失败:', error);
-      return [];  // 出错时返回空数组而不是抛出错误
+      return result.records.map(record => record.get('recommendation'));
     } finally {
       await session.close();
     }
@@ -945,6 +903,48 @@ class Neo4jService {
       `, { userId });
       
       return result.records[0]?.get('isOnline') || false;
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 优化 session 管理，添加通用的事务处理方法
+  async executeQuery(cypher, params = {}) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(cypher, params);
+      return result.records;
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 优化错误处理和重试逻辑
+  async withRetry(operation, maxRetries = 3) {
+    let retries = maxRetries;
+    while (retries > 0) {
+      try {
+        return await operation();
+      } catch (error) {
+        console.error(`操作失败 (剩余重试次数: ${retries - 1}):`, error);
+        retries--;
+        if (retries === 0) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+
+  // 添加事务支持
+  async executeTransaction(operations) {
+    const session = this.driver.session();
+    const tx = session.beginTransaction();
+    try {
+      const results = await Promise.all(operations.map(op => tx.run(op.cypher, op.params)));
+      await tx.commit();
+      return results;
+    } catch (error) {
+      await tx.rollback();
+      throw error;
     } finally {
       await session.close();
     }

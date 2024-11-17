@@ -9,52 +9,58 @@ const neo4jService = new Neo4jService();
 const dataSyncService = new DataSyncService();
 
 const friendController = {
+    // 提取公共的请求格式化方法
+    _formatFriendRequest(request) {
+        return {
+            _id: request._id,
+            sender: {
+                _id: request.sender._id,
+                username: request.sender.username,
+                avatar: request.sender.avatar,
+                bio: request.sender.bio,
+                statistics: {
+                    postsCount: request.sender.posts?.length || 0,
+                    friendsCount: request.sender.friends?.length || 0,
+                    likesCount: request.sender.likesReceived || 0
+                }
+            },
+            status: request.status,
+            createdAt: request.createdAt
+        };
+    },
+
+    // 提取公共的缓存清理方法
+    async _clearFriendshipCaches(userIds) {
+        try {
+            const clearPromises = userIds.flatMap(userId => [
+                redisClient.clearFriendsCache(userId),
+                redisClient.invalidateFriendCache(userId)
+            ]);
+            await Promise.all(clearPromises);
+        } catch (error) {
+            console.error('缓存清理失败:', error);
+            // 不抛出错误，避免影响主流程
+        }
+    },
+
     // 获取好友请求列表
     getFriendRequests: async (req, res) => {
         try {
-            // 尝试从缓存获取
             const cachedRequests = await redisClient.getFriendRequests(req.userId);
             if (cachedRequests) {
                 return res.json(cachedRequests);
             }
 
-            console.log('Fetching friend requests for user:', req.userId);
-            
             const requests = await FriendRequest.find({
                 receiver: req.userId,
                 status: 'pending'
-            }).populate({
-                path: 'sender',
-                select: 'username avatar bio posts friends likesReceived'
-            });
+            }).populate('sender', 'username avatar bio posts friends likesReceived');
             
-            console.log('Found requests:', requests); // 调试日志
+            const requestsWithStats = requests.map(request => 
+                friendController._formatFriendRequest(request)
+            );
             
-            const requestsWithStats = requests.map(request => {
-                console.log('Processing request:', request); // 调试日志
-                return {
-                    _id: request._id,
-                    sender: {
-                        _id: request.sender._id,
-                        username: request.sender.username,
-                        avatar: request.sender.avatar,
-                        bio: request.sender.bio,
-                        statistics: {
-                            postsCount: request.sender.posts?.length || 0,
-                            friendsCount: request.sender.friends?.length || 0,
-                            likesCount: request.sender.likesReceived || 0
-                        }
-                    },
-                    status: request.status,
-                    createdAt: request.createdAt
-                };
-            });
-            
-            console.log('Sending response:', requestsWithStats); // 调试日志
-
-            // 设置缓存
             await redisClient.setFriendRequests(req.userId, requestsWithStats);
-            
             res.json(requestsWithStats);
         } catch (error) {
             console.error('获取好友请求失败:', error);
@@ -112,110 +118,85 @@ const friendController = {
                 return res.status(403).json({ message: '无权处理该请求' });
             }
 
-            // 更新请求状态
             request.status = action === 'accept' ? 'accepted' : 'rejected';
             await request.save();
 
             if (action === 'accept') {
-                // 更新双方的好友列表
                 await Promise.all([
                     User.findByIdAndUpdate(req.userId, {
                         $addToSet: { friends: request.sender._id }
                     }),
                     User.findByIdAndUpdate(request.sender._id, {
                         $addToSet: { friends: req.userId }
-                    })
+                    }),
+                    neo4jService.addFriendship(req.userId, request.sender._id.toString())
+                        .catch(error => console.error('Neo4j同步失败:', error))
                 ]);
 
-                // 同步到 Neo4j
-                try {
-                    await neo4jService.addFriendship(req.userId, request.sender._id.toString());
-                } catch (neoError) {
-                    console.error('Neo4j同步失败:', neoError);
-                }
-
-                // 清除相关缓存
-                try {
-                    await Promise.all([
-                        redisClient.clearFriendsCache(req.userId),
-                        redisClient.clearFriendsCache(request.sender._id.toString()),
-                        redisClient.invalidateFriendCache(req.userId),
-                        redisClient.invalidateFriendCache(request.sender._id.toString())
-                    ]);
-                } catch (cacheError) {
-                    console.error('缓存清理失败:', cacheError);
-                }
+                await friendController._clearFriendshipCaches([
+                    req.userId, 
+                    request.sender._id.toString()
+                ]);
             }
 
-            // 获取更新后的请求列表
             const updatedRequests = await FriendRequest.find({
                 receiver: req.userId,
-                status: 'pending'  // 只获取待处理的请求
-            }).populate({
-                path: 'sender',
-                select: 'username avatar bio posts friends likesReceived'
-            });
+                status: 'pending'
+            }).populate('sender', 'username avatar bio posts friends likesReceived');
 
-            // 格式化请求列表
-            const formattedRequests = updatedRequests.map(req => ({
-                _id: req._id,
-                sender: {
-                    _id: req.sender._id,
-                    username: req.sender.username,
-                    avatar: req.sender.avatar,
-                    bio: req.sender.bio,
-                    statistics: {
-                        postsCount: req.sender.posts?.length || 0,
-                        friendsCount: req.sender.friends?.length || 0,
-                        likesCount: req.sender.likesReceived || 0
-                    }
-                },
-                status: req.status,
-                createdAt: req.createdAt
-            }));
+            const formattedRequests = updatedRequests.map(req => 
+                friendController._formatFriendRequest(req)
+            );
 
             res.json({
                 message: action === 'accept' ? '已接受好友请求' : '已拒绝好友请求',
                 updatedRequests: formattedRequests
             });
-
         } catch (error) {
             console.error('处理好友请求失败:', error);
             res.status(500).json({ message: '处理好友请求失败' });
         }
     },
 
-    // 添加获取好友推荐的方法
+    // 优化获取好友推荐的方法
     getFriendSuggestions: async (req, res) => {
         try {
             const userId = req.userId;
 
-            // 尝试从缓存获取基础推荐
+            // 尝试从缓存获取
             const cachedSuggestions = await redisClient.getFriendSuggestions(userId);
             if (cachedSuggestions) {
                 return res.json(cachedSuggestions);
             }
 
-            // 获取基础推荐
-            const suggestions = await User.find({
-                _id: { $ne: userId },
-                'privacy.profileVisibility': { $ne: 'private' }
-            })
-            .select('username avatar bio statistics')
-            .limit(10)
-            .lean();
+            // 获取Neo4j的推荐
+            const recommendations = await neo4jService.recommendFriends(userId);
+            
+            if (!recommendations || recommendations.length === 0) {
+                // 如果没有基于关系的推荐，使用基础推荐
+                const basicSuggestions = await User.find({
+                    _id: { $ne: userId },
+                    'privacy.profileVisibility': { $ne: 'private' },
+                    // 确保不是已经是好友的用户
+                    _id: { $nin: (await User.findById(userId)).friends }
+                })
+                .select('username avatar bio statistics')
+                .limit(10)
+                .lean();
 
-            if (suggestions && suggestions.length > 0) {
-                // 缓存结果
-                await redisClient.setFriendSuggestions(userId, suggestions);
-                return res.json(suggestions);
+                // 缓存基础推荐
+                if (basicSuggestions.length > 0) {
+                    await redisClient.setFriendSuggestions(userId, basicSuggestions);
+                    return res.json(basicSuggestions);
+                }
             }
 
-            res.json([]);
+            // 缓存并返回Neo4j推荐结果
+            await redisClient.setFriendSuggestions(userId, recommendations);
+            res.json(recommendations);
         } catch (error) {
             console.error('获取好友推荐失败:', error);
-            // 出错时返回空数组，但继续提供服务
-            res.json([]);
+            res.json([]); // 出错时返回空数组
         }
     },
 
@@ -254,35 +235,19 @@ const friendController = {
             const { friendId } = req.params;
             const userId = req.userId;
 
-            // 验证好友关系是否存在
             const user = await User.findById(userId);
             if (!user || !user.friends.includes(friendId)) {
                 return res.status(404).json({ message: '好友关系不存在' });
             }
 
-            // 从双方的好友列表中移除
             await Promise.all([
-                User.findByIdAndUpdate(userId, {
-                    $pull: { friends: friendId }
-                }),
-                User.findByIdAndUpdate(friendId, {
-                    $pull: { friends: userId }
-                })
+                User.findByIdAndUpdate(userId, { $pull: { friends: friendId } }),
+                User.findByIdAndUpdate(friendId, { $pull: { friends: userId } }),
+                neo4jService.removeFriendship(userId, friendId)
+                    .catch(error => console.error('Neo4j删除好友关系失败:', error))
             ]);
 
-            // 清除双方的缓存
-            await Promise.all([
-                redisClient.clearFriendsCache(userId),
-                redisClient.clearFriendsCache(friendId)
-            ]);
-
-            // 从 Neo4j 中删除好友关系
-            try {
-                await neo4jService.removeFriendship(userId, friendId);
-            } catch (neoError) {
-                console.error('Neo4j删除好友关系失败:', neoError);
-                // 继续执行，不影响主流程
-            }
+            await friendController._clearFriendshipCaches([userId, friendId]);
 
             res.json({ message: '好友删除成功' });
         } catch (error) {
@@ -462,7 +427,7 @@ const friendController = {
 
             res.json(enrichedCircles);
         } catch (error) {
-            console.error('获取社交圈子分析失败:', error);
+            console.error('获取社交子分析失败:', error);
             res.status(500).json({ message: '获取分析失败' });
         }
     },
@@ -481,26 +446,42 @@ const friendController = {
     getSmartRecommendations: async (req, res) => {
         try {
             const userId = req.userId;
+            console.log('开始获取智能推荐，用户ID:', userId);
+
+            // 使用正确的方法名 recommendFriends 而不是 getFriendRecommendations
+            const recommendations = await neo4jService.recommendFriends(userId);
             
-            // 尝试从缓存获取智能推荐
-            const cachedRecommendations = await redisClient.getSmartRecommendations(userId);
-            if (cachedRecommendations) {
-                return res.json(cachedRecommendations);
+            if (!recommendations || recommendations.length === 0) {
+                console.log('没有智能推荐结果');
+                return res.json([]);
             }
 
-            // 获取Neo4j推荐
-            const recommendations = await neo4jService.getFriendRecommendations(userId);
-            
-            if (recommendations && recommendations.length > 0) {
-                // 缓存结果
-                await redisClient.setSmartRecommendations(userId, recommendations);
-                return res.json(recommendations);
-            }
+            // 获取完整的用户信息
+            const userIds = recommendations.map(rec => rec.userId);
+            const users = await User.find(
+                { _id: { $in: userIds } },
+                'username avatar bio privacy statistics'
+            ).lean();
 
-            res.json([]);
+            // 合并 Neo4j 推荐数据和用户信息
+            const enrichedRecommendations = recommendations.map(rec => {
+                const userInfo = users.find(u => u._id.toString() === rec.userId);
+                return {
+                    ...userInfo,
+                    _id: rec.userId,
+                    commonFriendsCount: rec.commonFriendsCount,
+                    commonFriendIds: rec.commonFriendIds,
+                    recommendReason: rec.commonFriendsCount > 0 
+                        ? `有 ${rec.commonFriendsCount} 个共同好友`
+                        : undefined
+                };
+            });
+
+            console.log('智能推荐结果数量:', enrichedRecommendations.length);
+            res.json(enrichedRecommendations);
         } catch (error) {
             console.error('获取智能推荐失败:', error);
-            res.json([]); // 返回空数组
+            res.json([]); // 出错时返回空数组而不是500错误
         }
     },
 
@@ -618,7 +599,7 @@ const friendController = {
             console.log('数据同步完成');
             res.json({ message: '数据同步成功' });
         } catch (error) {
-            console.error('数据同步失���:', error);
+            console.error('数据同步失:', error);
             res.status(500).json({ 
                 message: '数据同步失败',
                 error: error.message 
@@ -738,7 +719,7 @@ const friendController = {
             const { targetUserId } = req.params;
             const path = await neo4jService.findShortestPath(req.userId, targetUserId);
             
-            // 获取路径上用户的详细信息
+            // 获取路径���用户的详细信息
             const userIds = path.map(p => p.userId);
             const users = await User.find({ _id: { $in: userIds } })
                 .select('username avatar');
@@ -1052,6 +1033,71 @@ const friendController = {
         } catch (error) {
             console.error('更新在线状态失败:', error);
             res.json({ success: false });  // 返回失败但不抛出500错误
+        }
+    },
+
+    // 获取社交圈子分析
+    getCirclesAnalysis: async (req, res) => {
+        try {
+            const userId = req.userId;
+            
+            // 尝试从缓存获取
+            const cachedData = await redisClient.getSocialCircles(userId);
+            if (cachedData) {
+                return res.json(cachedData);
+            }
+
+            // 从 Neo4j 获取社交圈子数据
+            const circles = await neo4jService.getSocialCircles(userId);
+            
+            // 缓存结果
+            await redisClient.setSocialCircles(userId, circles);
+            
+            res.json(circles);
+        } catch (error) {
+            console.error('获取社交圈子分析失败:', error);
+            res.status(500).json({ message: '获取社交圈子分析失败' });
+        }
+    },
+
+    // 获取社交影响力分析
+    getInfluenceAnalysis: async (req, res) => {
+        try {
+            const userId = req.userId;
+            
+            // 尝试从缓存获取
+            const cachedData = await redisClient.getSocialInfluence(userId);
+            if (cachedData) {
+                return res.json(cachedData);
+            }
+
+            // 计算影响力数据
+            const user = await User.findById(userId).populate('friends');
+            const totalReach = user.friends.length;
+            
+            // 获取二度和三度好友数量
+            const extendedNetwork = await neo4jService.getExtendedNetwork(userId);
+            
+            const distribution = [
+                { distance: 1, count: totalReach },
+                ...extendedNetwork.map(item => ({
+                    distance: item.distance,
+                    count: item.count
+                }))
+            ];
+
+            const influenceData = {
+                totalReach,
+                distribution
+            };
+
+            // 缓存结果
+            await redisClient.setSocialInfluence(userId, influenceData);
+            
+            res.json(influenceData);
+        } catch (error) {
+            console.error('获取社交影响力分析失败:', error);
+            res.status(500).json({ message: '获取社交影响力分析失败' });
         }
     }
 };

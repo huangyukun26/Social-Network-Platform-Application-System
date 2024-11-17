@@ -136,21 +136,97 @@ class RedisClient {
         };
     }
 
-    // 好友请求相关缓存
-    async getFriendRequests(userId) {
-        const startTime = performance.now();
-        const key = `friend:requests:${userId}`;
+    // 合并会话管理方法
+    async setSession(userId, sessionData, sessionId = null) {
+        try {
+            // 如果没有提供 sessionId，生成一个新的
+            const actualSessionId = sessionId || 
+                `${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const key = `session:${userId}:${actualSessionId}`;
+            
+            // 合并会话数据
+            const finalSessionData = {
+                userId,
+                sessionId: actualSessionId,
+                createdAt: Date.now(),
+                lastActive: Date.now(),
+                ...sessionData
+            };
+            
+            await this.client.hmset(key, finalSessionData);
+            await this.client.expire(key, 24 * 60 * 60); // 24小时过期
+            
+            return actualSessionId;
+        } catch (error) {
+            console.error('设置会话失败:', error);
+            throw error;
+        }
+    }
+
+    // 统一缓存键管理
+    #cacheKeys = {
+        session: (userId, sessionId) => `session:${userId}:${sessionId}`,
+        friendRequests: (userId) => `friend:requests:${userId}`,
+        friendsList: (userId) => `friends:list:${userId}`,
+        friendshipStatus: (userId, targetId) => `friendship:${userId}:${targetId}`,
+        onlineStatus: (userId) => `user:online:${userId}`,
+        friendsOnline: (userId) => `friends:online:${userId}`,
+        interactions: (userId1, userId2) => `friend:interactions:${userId1}:${userId2}`,
+        groups: (userId) => `friend:groups:${userId}`,
+        suggestions: (userId) => `friend:suggestions:${userId}`
+    };
+
+    // 统一缓存操作方法
+    async getCacheData(key, startTime = performance.now()) {
         const cached = await this.client.get(key);
-        
-        // 添加性能追踪
         await this.trackCacheMetrics(key, startTime, !!cached);
-        
         return cached ? JSON.parse(cached) : null;
     }
 
-    async setFriendRequests(userId, requests, expiry = 300) {
-        const key = `friend:requests:${userId}`;
-        await this.client.set(key, JSON.stringify(requests), 'EX', expiry);
+    async setCacheData(key, data, expiry = 300) {
+        await this.client.set(key, JSON.stringify(data), 'EX', expiry);
+    }
+
+    // 优化缓存清理方法
+    async clearCache(patterns) {
+        try {
+            const deletePromises = patterns.map(async pattern => {
+                const keys = await this.client.keys(pattern);
+                if (keys.length > 0) {
+                    console.log(`删除缓存键: ${keys.join(', ')}`);
+                    await this.client.del(keys);
+                }
+            });
+            
+            await Promise.all(deletePromises);
+        } catch (error) {
+            console.error('清理缓存失败:', error);
+        }
+    }
+
+    // 使用统一的方法重写现有功能
+    async getFriendRequests(userId) {
+        const key = this.#cacheKeys.friendRequests(userId);
+        return this.getCacheData(key);
+    }
+
+    async setFriendRequests(userId, requests) {
+        const key = this.#cacheKeys.friendRequests(userId);
+        await this.setCacheData(key, requests);
+    }
+
+    // 优化指标收集
+    async trackCacheMetrics(key, startTime, hit) {
+        this.metrics.totalRequests++;
+        hit ? this.metrics.hits++ : this.metrics.misses++;
+        
+        const latency = performance.now() - startTime;
+        this.metrics.latency.push(latency);
+        
+        // 只保留最近1000条延迟记录
+        if (this.metrics.latency.length > 1000) {
+            this.metrics.latency.shift();
+        }
     }
 
     // 好友状态缓存
@@ -367,7 +443,7 @@ class RedisClient {
         }
     }
 
-    // 添加新的会话管理方法，与测试用例匹配
+    // 添加新的会话管理方法，与试用例匹配
     async createSession(userId, sessionId) {
         try {
             const key = `session:${userId}:${sessionId}`;
@@ -605,7 +681,7 @@ class RedisClient {
         await this.client.set(key, JSON.stringify(recommendations), 'EX', expiry);
     }
 
-    // 清除推荐缓存
+    // 清除推缓存
     async clearRecommendationsCache(userId) {
         const keys = [
             `friend:suggestions:${userId}`,
@@ -642,6 +718,36 @@ class RedisClient {
             console.error('清理好友缓存失败:', error);
             // 不抛出错误，避免影响主流程
         }
+    }
+
+    // 社交圈子缓存
+    async getSocialCircles(userId) {
+        const startTime = performance.now();
+        const key = `social:circles:${userId}`;
+        const cached = await this.client.get(key);
+        
+        await this.trackCacheMetrics(key, startTime, !!cached);
+        return cached ? JSON.parse(cached) : null;
+    }
+
+    async setSocialCircles(userId, circles, expiry = 3600) {
+        const key = `social:circles:${userId}`;
+        await this.client.set(key, JSON.stringify(circles), 'EX', expiry);
+    }
+
+    // 社交影响力缓存
+    async getSocialInfluence(userId) {
+        const startTime = performance.now();
+        const key = `social:influence:${userId}`;
+        const cached = await this.client.get(key);
+        
+        await this.trackCacheMetrics(key, startTime, !!cached);
+        return cached ? JSON.parse(cached) : null;
+    }
+
+    async setSocialInfluence(userId, influence, expiry = 3600) {
+        const key = `social:influence:${userId}`;
+        await this.client.set(key, JSON.stringify(influence), 'EX', expiry);
     }
 }
 
