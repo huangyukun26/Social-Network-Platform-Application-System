@@ -268,7 +268,7 @@ class RedisClient {
             // 获取用户现有的会话
             const existingSessions = await this.getUserActiveSessions(userId);
             
-            // 如果存在其他会话，将其标记为已过期
+            // 如���存在其他会话，将其标记为已过期
             for (const session of existingSessions) {
                 if (session.deviceInfo?.userAgent === sessionData.deviceInfo?.userAgent) {
                     await this.removeSession(userId, session.sessionId);
@@ -411,6 +411,68 @@ class RedisClient {
             if (keys.length > 0) {
                 await this.client.del(keys);
             }
+        }
+    }
+
+    // 添加用户缓存清理方法
+    async clearUserCache(userId) {
+        try {
+            console.log('开始清理用户缓存:', userId);
+            
+            // 获取所有与该用户相关的缓存键
+            const patterns = [
+                `friend:*:${userId}*`,
+                `friends:list:${userId}*`,
+                `friend:suggestions:${userId}*`,
+                `friendship:${userId}:*`,
+                `session:${userId}:*`
+            ];
+            
+            // 并行删除所有匹配的键
+            const deletePromises = patterns.map(async pattern => {
+                const keys = await this.client.keys(pattern);
+                if (keys.length > 0) {
+                    console.log(`删除缓存键: ${keys.join(', ')}`);
+                    await this.client.del(keys);
+                }
+            });
+            
+            await Promise.all(deletePromises);
+            console.log('用户缓存清理完成:', userId);
+        } catch (error) {
+            console.error('清理用户缓存失败:', error);
+            // 不抛出错误，避免影响主流程
+        }
+    }
+
+    // 添加清除所有缓存的方法
+    async clearAllCache() {
+        try {
+            console.log('开始清理所有缓存');
+            
+            // 获取所有相关的缓存键
+            const patterns = [
+                'friend:*',
+                'friends:list:*',
+                'friend:suggestions:*',
+                'friendship:*',
+                'session:*'
+            ];
+            
+            // 并行删除所有匹配的键
+            const deletePromises = patterns.map(async pattern => {
+                const keys = await this.client.keys(pattern);
+                if (keys.length > 0) {
+                    console.log(`删除缓存键: ${keys.join(', ')}`);
+                    await this.client.del(keys);
+                }
+            });
+            
+            await Promise.all(deletePromises);
+            console.log('所有缓存清理完成');
+        } catch (error) {
+            console.error('清理所有缓存失败:', error);
+            // 不抛出错误，避免影响主流程
         }
     }
 }

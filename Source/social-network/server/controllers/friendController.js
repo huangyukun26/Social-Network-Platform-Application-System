@@ -2,7 +2,10 @@ const FriendRequest = require('../models/FriendRequest');
 const User = require('../models/User');
 const RedisClient = require('../utils/RedisClient');
 const Neo4jService = require('../services/neo4jService');
+const DataSyncService = require('../services/DataSyncService');
+
 const neo4jService = new Neo4jService();
+const dataSyncService = new DataSyncService();
 
 const friendController = {
     // 获取好友请求列表
@@ -456,6 +459,191 @@ const friendController = {
         } catch (error) {
             console.error('获取社交影响力分析失败:', error);
             res.status(500).json({ message: '获取分析失败' });
+        }
+    },
+
+    // 智能好友推荐
+    getSmartRecommendations: async (req, res) => {
+        try {
+            const recommendations = await neo4jService.recommendFriends(req.userId);
+            
+            // 获取用户详细信息
+            const userIds = recommendations.map(r => r.userId);
+            const users = await User.find({ _id: { $in: userIds } })
+                .select('username avatar bio privacy');
+
+            const enrichedRecommendations = recommendations.map(rec => {
+                const user = users.find(u => u._id.toString() === rec.userId);
+                return {
+                    ...rec,
+                    user: {
+                        _id: user._id,
+                        username: user.username,
+                        avatar: user.avatar,
+                        bio: user.privacy.profileVisibility === 'public' ? user.bio : null
+                    }
+                };
+            });
+
+            res.json(enrichedRecommendations);
+        } catch (error) {
+            console.error('获取智能推荐失败:', error);
+            res.status(500).json({ message: '获取推荐失败' });
+        }
+    },
+
+    // 社交路径分析
+    getConnectionPath: async (req, res) => {
+        try {
+            const { targetUserId } = req.params;
+            const path = await neo4jService.findConnectionPath(req.userId, targetUserId);
+            
+            if (!path) {
+                return res.json({ message: '未找到社交路径' });
+            }
+
+            // 获取路径上用户的信息
+            const users = await User.find({ _id: { $in: path.path } })
+                .select('username avatar');
+
+            const enrichedPath = {
+                ...path,
+                users: path.path.map(id => users.find(u => u._id.toString() === id))
+            };
+
+            res.json(enrichedPath);
+        } catch (error) {
+            console.error('获取社交路径失败:', error);
+            res.status(500).json({ message: '获取路径失败' });
+        }
+    },
+
+    // 兴趣群组发现
+    getSocialGroups: async (req, res) => {
+        try {
+            const groups = await neo4jService.findSocialGroups(req.userId);
+            res.json(groups);
+        } catch (error) {
+            console.error('获取兴趣群组失败:', error);
+            res.status(500).json({ message: '获取群组失败' });
+        }
+    },
+
+    // 用户活跃度分析
+    getUserActivity: async (req, res) => {
+        try {
+            const activity = await neo4jService.analyzeUserActivity(req.userId);
+            res.json(activity);
+        } catch (error) {
+            console.error('获取活跃度分析失败:', error);
+            res.status(500).json({ message: '获取分析失败' });
+        }
+    },
+
+    // 关系强度分析
+    getRelationshipStrength: async (req, res) => {
+        try {
+            const { targetUserId } = req.params;
+            const strength = await neo4jService.calculateRelationshipStrength(
+                req.userId,
+                targetUserId
+            );
+            res.json(strength);
+        } catch (error) {
+            console.error('获���关系强度失败:', error);
+            res.status(500).json({ message: '获取分析失败' });
+        }
+    },
+
+    // 添加数据同步方法
+    syncFriendsData: async (req, res) => {
+        try {
+            console.log('开始同步用户数据:', req.userId);
+            
+            // 获取用户完整数据
+            const user = await User.findById(req.userId)
+                .populate('friends')
+                .populate('posts');
+                
+            if (!user) {
+                return res.status(404).json({ message: '用户不存在' });
+            }
+
+            // 确保 Neo4j 中有该用户节点
+            await neo4jService.syncUserToNeo4j(user);
+
+            // 同步该用户的所有好友关系
+            const friendPromises = user.friends.map(async friend => {
+                // 确保好友节点存在
+                await neo4jService.syncUserToNeo4j(friend);
+                
+                // 同步双向好友关系
+                await neo4jService.syncFriendshipToNeo4j(
+                    user._id.toString(),
+                    friend._id.toString(),
+                    {
+                        status: 'regular',
+                        interactionCount: 0,
+                        lastInteraction: new Date()
+                    }
+                );
+            });
+
+            await Promise.all(friendPromises);
+
+            // 清除相关缓存
+            await RedisClient.clearUserCache(req.userId);
+            
+            console.log('数据同步完成');
+            res.json({ message: '数据同步成功' });
+        } catch (error) {
+            console.error('数据同步失败:', error);
+            res.status(500).json({ 
+                message: '数据同步失败',
+                error: error.message 
+            });
+        }
+    },
+
+    // 添加全量数据同步方法
+    syncAllData: async (req, res) => {
+        try {
+            console.log('开始全量数据同步');
+            
+            // 清理Neo4j数据
+            await neo4jService.clearAllData();
+            
+            // 同步所有用户数据
+            const users = await User.find({})
+                .populate('friends')
+                .populate('posts');
+                
+            for (const user of users) {
+                // 同步用户节点
+                await neo4jService.syncUserToNeo4j(user);
+                
+                // 同步好友关系
+                for (const friend of user.friends) {
+                    await neo4jService.syncFriendshipToNeo4j(
+                        user._id.toString(),
+                        friend._id.toString(),
+                        {
+                            status: 'regular',
+                            interactionCount: 0,
+                            lastInteraction: new Date()
+                        }
+                    );
+                }
+            }
+            
+            // 清除所有缓存
+            await RedisClient.clearAllCache();
+            
+            console.log('全量数据同步完成');
+            res.json({ message: '全量数据同步成功' });
+        } catch (error) {
+            console.error('全量数据同步失败:', error);
+            res.status(500).json({ message: '全量数据同步失败' });
         }
     }
 };

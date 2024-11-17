@@ -5,6 +5,7 @@ const friendController = require('../controllers/friendController');
 const User = require('../models/User');
 const RedisClient = require('../utils/RedisClient');
 const Neo4jService = require('../services/neo4jService');
+const DataSyncService = require('../services/DataSyncService');
 
 // 添加好友隐私检查中间件
 const checkFriendPrivacy = async (req, res, next) => {
@@ -73,5 +74,25 @@ router.get('/analytics/social-circle', auth, friendController.getSocialCircleAna
 router.get('/analysis/common/:targetUserId', auth, friendController.getCommonFriendsAnalysis);
 router.get('/analysis/circles', auth, friendController.getSocialCirclesAnalysis);
 router.get('/analysis/influence', auth, friendController.getSocialInfluenceAnalysis);
+
+
+// 智能好友推荐
+router.get('/smart-recommendations', auth, friendController.getSmartRecommendations);
+
+// 社交路径分析
+router.get('/connection-path/:targetUserId', auth, friendController.getConnectionPath);
+
+// 兴趣群组发现
+router.get('/social-groups', auth, friendController.getSocialGroups);
+
+// 用户活跃度分析
+router.get('/activity', auth, friendController.getUserActivity);
+
+// 关系强度分析
+router.get('/relationship-strength/:targetUserId', auth, friendController.getRelationshipStrength);
+
+// 添加数据同步路由
+router.post('/sync', auth, friendController.syncFriendsData);
+router.post('/sync/all', auth, friendController.syncAllData);
 
 module.exports = router; 

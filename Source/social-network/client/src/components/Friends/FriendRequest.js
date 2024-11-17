@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { List, Avatar, Button, message } from 'antd';
 import { UserOutlined } from '@ant-design/icons';
 import styled from 'styled-components';
@@ -19,18 +19,25 @@ const RequestItem = styled(List.Item)`
 `;
 
 const FriendRequest = ({ requests, onUpdate }) => {
-    console.log('Received requests:', requests); // 调试日志
+    const [pendingRequests, setPendingRequests] = useState(requests);
     
+    React.useEffect(() => {
+        setPendingRequests(requests);
+    }, [requests]);
+
     const handleRequest = async (requestId, action) => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.post(
+            await axios.post(
                 `http://localhost:5000/api/friends/requests/${requestId}/${action}`,
                 {},
                 { headers: { Authorization: `Bearer ${token}` }}
             );
             
+            setPendingRequests(prev => prev.filter(req => req._id !== requestId));
+            
             message.success(action === 'accept' ? '已接受好友请求' : '已拒绝好友请求');
+            
             if (onUpdate) {
                 onUpdate();
             }
@@ -43,7 +50,7 @@ const FriendRequest = ({ requests, onUpdate }) => {
     return (
         <RequestContainer>
             <List
-                dataSource={requests}
+                dataSource={pendingRequests}
                 renderItem={request => {
                     console.log('Rendering request:', request); // 调试日志
                     return (

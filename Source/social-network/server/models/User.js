@@ -88,7 +88,81 @@ const userSchema = new mongoose.Schema({
         type: String,
         enum: ['user', 'admin', 'moderator'],
         default: 'user'
-    }
+    },
+    interactions: [{
+        type: {
+            type: String,
+            enum: ['like', 'comment', 'share', 'view'],
+            required: true
+        },
+        targetUser: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            required: true
+        },
+        timestamp: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    friendships: [{
+        friend: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        },
+        status: {
+            type: String,
+            enum: ['close', 'regular', 'acquaintance'],
+            default: 'regular'
+        },
+        interactionCount: {
+            type: Number,
+            default: 0
+        },
+        lastInteraction: {
+            type: Date
+        },
+        commonInterests: [{
+            type: String
+        }]
+    }],
+    interests: [{
+        type: String,
+        trim: true
+    }],
+    activityMetrics: {
+        lastActive: {
+            type: Date,
+            default: Date.now
+        },
+        loginCount: {
+            type: Number,
+            default: 0
+        },
+        postFrequency: {
+            type: Number,
+            default: 0
+        },
+        interactionFrequency: {
+            type: Number,
+            default: 0
+        }
+    },
+    socialCircles: [{
+        name: {
+            type: String,
+            required: true
+        },
+        members: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        }],
+        type: {
+            type: String,
+            enum: ['close_friends', 'family', 'colleagues', 'custom'],
+            default: 'custom'
+        }
+    }]
 });
 
 // 添加虚拟字段来计算统计数据
@@ -102,6 +176,18 @@ userSchema.virtual('stats').get(function() {
     };
 });
 
+// 添加新的虚拟字段
+userSchema.virtual('socialStats').get(function() {
+    return {
+        ...this.stats, // 保留原有统计
+        interactionsCount: this.interactions ? this.interactions.length : 0,
+        averageInteractionFrequency: this.activityMetrics.interactionFrequency,
+        socialCirclesCount: this.socialCircles ? this.socialCircles.length : 0,
+        closeFriendsCount: this.friendships ? 
+            this.friendships.filter(f => f.status === 'close').length : 0
+    };
+});
+
 // 确保虚拟字段在 JSON 中可见
 userSchema.set('toJSON', { virtuals: true });
 userSchema.set('toObject', { virtuals: true });
@@ -110,7 +196,28 @@ userSchema.post('save', async function(doc) {
     try {
         const Neo4jService = require('../services/neo4jService');
         const neo4jService = new Neo4jService();
-        await neo4jService.syncUserToNeo4j(doc._id.toString(), doc.username);
+        
+        // 同步用户基本信息
+        await neo4jService.syncUserToNeo4j(doc._id.toString(), {
+            username: doc.username,
+            interests: doc.interests,
+            activityScore: doc.activityMetrics.interactionFrequency
+        });
+
+        // 同步社交关系
+        if (doc.friendships) {
+            for (const friendship of doc.friendships) {
+                await neo4jService.syncFriendshipToNeo4j(
+                    doc._id.toString(),
+                    friendship.friend.toString(),
+                    {
+                        status: friendship.status,
+                        interactionCount: friendship.interactionCount,
+                        lastInteraction: friendship.lastInteraction
+                    }
+                );
+            }
+        }
     } catch (error) {
         console.error('Neo4j 同步失败:', error);
     }
