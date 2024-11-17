@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { List, Avatar, Button, message, Modal } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { List, Avatar, Button, message, Modal, Badge } from 'antd';
 import { UserOutlined, HeartOutlined, CommentOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
@@ -88,178 +88,202 @@ const ProfileBio = styled.div`
   overflow-y: auto;
 `;
 
-const FriendsList = ({ friends, onUpdate }) => {
-    const navigate = useNavigate();
-    const [selectedFriend, setSelectedFriend] = useState(null);
+const FriendsList = ({ friends, loading, onFriendUpdate }) => {
+    const [onlineStatus, setOnlineStatus] = useState({});
     const [isModalVisible, setIsModalVisible] = useState(false);
+    const [selectedFriend, setSelectedFriend] = useState(null);
+    const navigate = useNavigate();
 
-    // 获取完整的头像URL
-    const getFullAvatarUrl = (avatarPath) => {
-        if (!avatarPath) return null;
-        return avatarPath.startsWith('http') 
-            ? avatarPath 
-            : `http://localhost:5000${avatarPath}`;
+    const fetchOnlineStatus = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+
+            const response = await axios.get(
+                '/api/friends/status/online',
+                {
+                    headers: { 
+                        Authorization: `Bearer ${token}`
+                    }
+                }
+            );
+            
+            if (response.data) {
+                const statusMap = {};
+                response.data.forEach(status => {
+                    statusMap[status.userId] = status.isOnline;
+                });
+                setOnlineStatus(statusMap);
+            }
+        } catch (error) {
+            console.error('获取在线状态失败:', error);
+        }
     };
+
+    useEffect(() => {
+        if (friends.length > 0) {  // 只在有好友数据时开始轮询
+            fetchOnlineStatus();
+            const intervalId = setInterval(fetchOnlineStatus, 30000);
+            return () => clearInterval(intervalId);
+        }
+    }, [friends]); // 只在 friends 变化时重新设置轮询
 
     const handleRemoveFriend = async (friendId) => {
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`http://localhost:5000/api/friends/${friendId}`, {
+            await axios.delete(`/api/friends/${friendId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            message.success('已删除好友');
-            onUpdate();
+
+            message.success('好友删除成功');
+            if (onFriendUpdate) {
+                onFriendUpdate();
+            }
         } catch (error) {
+            console.error('删除好友失败:', error);
             message.error('删除好友失败');
         }
     };
 
-    const handleFriendClick = (friend) => {
+    const renderFriendInfo = (friend) => (
+        <List.Item.Meta
+            avatar={
+                <StyledAvatar 
+                    src={friend.avatar ? `http://localhost:5000${friend.avatar}` : null}
+                    icon={!friend.avatar && <UserOutlined />}
+                    onClick={() => showFriendProfile(friend)}
+                />
+            }
+            title={
+                <UserInfo>
+                    <Link to={`/profile/${friend._id}`}>
+                        {friend.username}
+                        {onlineStatus[friend._id] && 
+                            <span style={{ color: '#52c41a', marginLeft: 8, fontSize: '12px' }}>
+                                在线
+                            </span>
+                        }
+                    </Link>
+                </UserInfo>
+            }
+            description={
+                <div>
+                    <div>{friend.bio || '这个人很懒，什么都没写~'}</div>
+                    <div style={{ marginTop: 8 }}>
+                        {(friend.statistics?.postsCount > 0 || 
+                          friend.statistics?.commentsCount > 0) ? (
+                            <>
+                                <Badge 
+                                    count={friend.statistics?.postsCount || 0} 
+                                    showZero={false}
+                                    style={{ backgroundColor: '#1890ff' }}
+                                >
+                                    <Button type="link" size="small">
+                                        <HeartOutlined /> 动态
+                                    </Button>
+                                </Badge>
+                                <Badge 
+                                    count={friend.statistics?.commentsCount || 0} 
+                                    showZero={false}
+                                    style={{ backgroundColor: '#52c41a' }}
+                                >
+                                    <Button type="link" size="small">
+                                        <CommentOutlined /> 评论
+                                    </Button>
+                                </Badge>
+                            </>
+                        ) : null}
+                    </div>
+                </div>
+            }
+        />
+    );
+
+    const showFriendProfile = (friend) => {
         setSelectedFriend(friend);
         setIsModalVisible(true);
-    };
-
-    const handleViewFullProfile = () => {
-        navigate(`/profile/${selectedFriend._id}`);
-        setIsModalVisible(false);
-    };
-
-    const renderFriendInfo = (friend) => {
-        // 好友应该始终可以看到基本信息
-        const displayInfo = {
-            _id: friend._id,
-            username: friend.username,
-            avatar: friend.avatar,
-            bio: friend.bio || '这个人很懒，什么都没写~',
-            statistics: {
-                // 根据隐私设置显示统计信息
-                postsCount: friend.privacy?.showPosts ? friend.statistics?.postsCount : '-',
-                friendsCount: friend.privacy?.showFollowers ? friend.statistics?.friendsCount : '-',
-                likesCount: friend.statistics?.likesCount || 0
-            }
-        };
-
-        // 如果是私密账户，添加提示
-        if (friend.privacy?.profileVisibility === 'private') {
-            displayInfo.isPrivate = true;
-            displayInfo.privateNote = '该用户已设为私密账户';
-        }
-
-        return displayInfo;
     };
 
     return (
         <>
             <List
                 dataSource={friends}
-                renderItem={friend => {
-                    const displayInfo = renderFriendInfo(friend);
-                    return (
-                        <FriendItem
-                            actions={[
-                                <Button 
-                                    danger
-                                    onClick={() => handleRemoveFriend(friend._id)}
-                                >
-                                    删除好友
-                                </Button>
-                            ]}
-                        >
-                            <List.Item.Meta
-                                avatar={
-                                    <StyledAvatar 
-                                        src={getFullAvatarUrl(friend.avatar)}
-                                        icon={<UserOutlined />}
-                                        onClick={() => handleFriendClick(friend)}
-                                    />
-                                }
-                                title={
-                                    <Link to={`/profile/${friend._id}`}>
-                                        {friend.username}
-                                        {friend.privacy?.profileVisibility === 'private' && 
-                                            <span style={{ marginLeft: 8, color: '#8e8e8e', fontSize: 12 }}>
-                                                (私密账户)
-                                            </span>
-                                        }
-                                    </Link>
-                                }
-                                description={
-                                    <div>
-                                        <div>{displayInfo.bio}</div>
-                                        <div style={{ marginTop: 8, color: '#8e8e8e', fontSize: 12 }}>
-                                            {displayInfo.statistics.postsCount} 帖子 · 
-                                            {displayInfo.statistics.friendsCount} 好友 · 
-                                            {displayInfo.statistics.likesCount} 获赞
-                                        </div>
-                                    </div>
-                                }
-                            />
-                        </FriendItem>
-                    );
-                }}
-                locale={{ emptyText: '暂无好友' }}
+                loading={loading}
+                renderItem={friend => (
+                    <FriendItem
+                        actions={[
+                            <Button 
+                                type="link" 
+                                danger
+                                onClick={() => handleRemoveFriend(friend._id)}
+                            >
+                                删除好友
+                            </Button>
+                        ]}
+                    >
+                        {renderFriendInfo(friend)}
+                    </FriendItem>
+                )}
             />
-
             <Modal
                 visible={isModalVisible}
                 onCancel={() => setIsModalVisible(false)}
-                footer={[
-                    <Button key="view" type="primary" onClick={handleViewFullProfile}>
-                        查看完整主页
-                    </Button>
-                ]}
-                width={900}
-                style={{ top: 20 }}
-                bodyStyle={{ padding: 0 }}
+                footer={null}
+                width={800}
             >
                 {selectedFriend && (
                     <ProfileModalContent>
-                        <div style={{ flex: 1, background: '#fafafa', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                            <StyledAvatar 
-                                src={getFullAvatarUrl(selectedFriend.avatar)} 
-                                icon={<UserOutlined />}
-                                size={200}
-                            />
-                        </div>
                         <ProfileInfo>
                             <ProfileHeader>
-                                <h2>{selectedFriend.username}</h2>
-                                {selectedFriend.isPrivate && (
-                                    <div style={{ color: '#8e8e8e', fontSize: '14px' }}>
-                                        {selectedFriend.privateNote}
-                                    </div>
-                                )}
+                                <Avatar 
+                                    size={64} 
+                                    src={selectedFriend.avatar ? 
+                                        `http://localhost:5000${selectedFriend.avatar}` : null}
+                                    icon={!selectedFriend.avatar && <UserOutlined />}
+                                />
+                                <div>
+                                    <h2>{selectedFriend.username}</h2>
+                                    <Button onClick={() => {
+                                        navigate(`/profile/${selectedFriend._id}`);
+                                        setIsModalVisible(false);
+                                    }}>
+                                        查看完整资料
+                                    </Button>
+                                </div>
                             </ProfileHeader>
                             <ProfileStats>
-                                <StatItem>
-                                    <div className="number">
-                                        {selectedFriend.statistics.postsCount}
-                                    </div>
-                                    <div className="label">帖子</div>
-                                </StatItem>
-                                <StatItem>
-                                    <div className="number">
-                                        {selectedFriend.statistics.friendsCount}
-                                    </div>
-                                    <div className="label">好友</div>
-                                </StatItem>
-                                <StatItem>
-                                    <div className="number">
-                                        {selectedFriend.statistics.likesCount}
-                                    </div>
-                                    <div className="label">获赞</div>
-                                </StatItem>
-                            </ProfileStats>
-                            <ProfileBio>
-                                <div style={{ marginBottom: 16 }}>
-                                    <strong>个人简介</strong>
-                                </div>
-                                <div>{selectedFriend.bio || '这个人很懒，什么都没写~'}</div>
-                                {selectedFriend.location && (
-                                    <div style={{ marginTop: 16 }}>
-                                        📍 {selectedFriend.location}
+                                {(selectedFriend.statistics?.postsCount > 0 || 
+                                  selectedFriend.statistics?.friendsCount > 0 ||
+                                  selectedFriend.statistics?.likesCount > 0) ? (
+                                    <>
+                                        <StatItem>
+                                            <div className="number">
+                                                {selectedFriend.statistics?.postsCount || '-'}
+                                            </div>
+                                            <div className="label">动态</div>
+                                        </StatItem>
+                                        <StatItem>
+                                            <div className="number">
+                                                {selectedFriend.statistics?.friendsCount || '-'}
+                                            </div>
+                                            <div className="label">好友</div>
+                                        </StatItem>
+                                        <StatItem>
+                                            <div className="number">
+                                                {selectedFriend.statistics?.likesCount || '-'}
+                                            </div>
+                                            <div className="label">获赞</div>
+                                        </StatItem>
+                                    </>
+                                ) : (
+                                    <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                                        暂无统计数据
                                     </div>
                                 )}
+                            </ProfileStats>
+                            <ProfileBio>
+                                <h3>个人简介</h3>
+                                <p>{selectedFriend.bio || '这个人很懒，什么都没写~'}</p>
                             </ProfileBio>
                         </ProfileInfo>
                     </ProfileModalContent>

@@ -63,12 +63,12 @@ const SocialAnalytics = ({ friends }) => {
 
       setAnalyticsData({
         circles: circlesRes.data,
-        influence: influenceRes.data,
-        activity: activityRes.data
+        influence: influenceRes.data
       });
+      setActivityData(activityRes.data);
       
     } catch (error) {
-      console.error('获取社交分析数据失败:', error.response || error);
+      console.error('获取社交分析数据失败:', error);
       setError(error.response?.data?.message || '获取社交分析数据失败');
       message.error('获取社交分析数据失败');
     } finally {
@@ -85,6 +85,7 @@ const SocialAnalytics = ({ friends }) => {
       );
       setRelationshipData(response.data);
     } catch (error) {
+      console.error('获取关系强度数据失败:', error);
       message.error('获取关系强度数据失败');
     }
   };

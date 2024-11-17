@@ -18,8 +18,12 @@ const RelationshipStrength = ({ data, targetUser }) => {
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
         <Progress
           type="dashboard"
-          percent={data.strength * 100}
+          percent={Math.min(data.strength * 100, 100)}
           format={percent => `${percent.toFixed(1)}%`}
+          strokeColor={{
+            '0%': '#108ee9',
+            '100%': '#87d068',
+          }}
         />
       </div>
       <Descriptions column={1}>
@@ -28,6 +32,9 @@ const RelationshipStrength = ({ data, targetUser }) => {
         </Descriptions.Item>
         <Descriptions.Item label="互动次数">
           {data.interactions} 次
+        </Descriptions.Item>
+        <Descriptions.Item label="最近互动">
+          {data.lastInteraction ? new Date(data.lastInteraction).toLocaleDateString() : '暂无'}
         </Descriptions.Item>
       </Descriptions>
     </StrengthCard>

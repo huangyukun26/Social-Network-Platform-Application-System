@@ -68,6 +68,7 @@ const ActionButton = styled(Button)`
 const UserSearch = ({ onUpdate }) => {
     const [searchResults, setSearchResults] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [searchType, setSearchType] = useState('basic');
 
     const searchUsers = debounce(async (query) => {
         if (!query.trim()) {
@@ -78,8 +79,12 @@ const UserSearch = ({ onUpdate }) => {
         try {
             setLoading(true);
             const token = localStorage.getItem('token');
+            const endpoint = searchType === 'advanced' 
+                ? '/api/users/search/advanced'
+                : '/api/users/search';
+                
             const response = await axios.get(
-                `http://localhost:5000/api/users/search?query=${query}`,
+                `http://localhost:5000${endpoint}?query=${query}`,
                 { headers: { Authorization: `Bearer ${token}` }}
             );
             setSearchResults(response.data);

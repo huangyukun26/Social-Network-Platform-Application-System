@@ -64,20 +64,31 @@ class Neo4jService {
     const session = this.driver.session();
     try {
       const result = await session.run(`
-        MATCH (user:User {userId: $userId})-[:FRIEND]->(friend:User)
-        MATCH (friend)-[:FRIEND]->(friendOfFriend:User)
-        WHERE NOT (user)-[:FRIEND]->(friendOfFriend)
-        AND user <> friendOfFriend
-        WITH friendOfFriend, count(friend) as commonFriends
-        RETURN friendOfFriend.userId as userId, commonFriends
+        MATCH (u:User {userId: $userId})-[:FRIEND]-(friend)-[:FRIEND]-(potentialFriend)
+        WHERE NOT (u)-[:FRIEND]-(potentialFriend)
+        AND u <> potentialFriend
+        WITH DISTINCT potentialFriend, count(DISTINCT friend) as commonFriends
+        RETURN 
+          potentialFriend.userId as userId,
+          potentialFriend.username as username,
+          potentialFriend.avatar as avatar,
+          toInteger(commonFriends) as commonFriendsCount
         ORDER BY commonFriends DESC
-        LIMIT 10
-      `, { userId });
-      
+        LIMIT toInteger($limit)
+      `, { 
+        userId: String(userId),
+        limit: 10
+      });
+
       return result.records.map(record => ({
         userId: record.get('userId'),
-        commonFriends: parseInt(record.get('commonFriends').toString())
+        username: record.get('username'),
+        avatar: record.get('avatar'),
+        commonFriendsCount: record.get('commonFriendsCount')
       }));
+    } catch (error) {
+      console.error('获取推荐失败:', error);
+      return [];
     } finally {
       await session.close();
     }
@@ -149,39 +160,33 @@ class Neo4jService {
     let retries = 3;
     
     while (retries > 0) {
-      try {
-        // 确保数据是原始类型
-        const sanitizedData = {
-          userId: user._id.toString(),
-          username: String(user.username || ''),
-          interests: Array.isArray(user.interests) ? user.interests : [],
-          activityScore: Number(user.posts?.length || 0)
-        };
+        try {
+            // 确保数据是原始类型
+            const sanitizedData = {
+                userId: user._id.toString(),
+                username: user.username || '',
+                interests: Array.isArray(user.interests) ? user.interests : [],
+                activityScore: user.activityMetrics?.interactionFrequency || 0
+            };
 
-        console.log('同步用户数据到Neo4j:', sanitizedData);
+            await session.run(`
+                MERGE (u:User {userId: $userId})
+                SET u.username = $username,
+                    u.interests = $interests,
+                    u.activityScore = $activityScore,
+                    u.lastUpdated = datetime()
+                RETURN u
+            `, sanitizedData);
 
-        const result = await session.run(`
-          MERGE (u:User {userId: $userId})
-          ON CREATE SET u.username = $username,
-                       u.interests = $interests,
-                       u.activityScore = $activityScore,
-                       u.createdAt = datetime()
-          ON MATCH SET  u.username = $username,
-                       u.interests = $interests,
-                       u.activityScore = $activityScore,
-                       u.updatedAt = datetime()
-          RETURN u
-        `, sanitizedData);
-
-        return result.records[0].get('u').properties;
-      } catch (error) {
-        console.error(`同步用户到Neo4j失败 (剩余重试次数: ${retries - 1}):`, error);
-        retries--;
-        if (retries === 0) throw error;
-        await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒后重试
-      } finally {
-        await session.close();
-      }
+            break; // 成功后跳出重试循环
+        } catch (error) {
+            console.error('同步用户到Neo4j失败 (剩余重试次数:', retries - 1, '):', error);
+            retries--;
+            if (retries === 0) throw error;
+            await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒后重试
+        } finally {
+            await session.close();
+        }
     }
   }
 
@@ -403,47 +408,33 @@ class Neo4jService {
   }
 
   // 获取社交影响力分析
-  async getSocialInfluence(userId) {
+  async analyzeSocialInfluence(userId) {
     const session = this.driver.session();
     try {
       const result = await session.run(`
         MATCH (u:User {userId: $userId})
-        OPTIONAL MATCH path = (u)-[:FRIEND*1..3]-(connected:User)
-        WHERE u <> connected
-        WITH DISTINCT connected,
-             CASE 
-                WHEN connected IS NULL THEN 0
-                ELSE length(path)
-             END as distance
-        WITH distance, count(connected) as connCount
-        WHERE distance > 0
-        WITH collect({
-            distance: distance,
-            count: connCount
-        }) as distribution,
-        sum(connCount) as totalReach
+        OPTIONAL MATCH (u)-[:FRIEND]-(direct:User)
+        OPTIONAL MATCH (u)-[:FRIEND]-()-[:FRIEND]-(indirect:User)
+        WHERE u <> indirect AND NOT (u)-[:FRIEND]-(indirect)
+        WITH u,
+             count(DISTINCT direct) as directConnections,
+             count(DISTINCT indirect) as indirectConnections,
+             collect(DISTINCT direct) as directFriends
+        WITH u, directConnections, indirectConnections, directFriends,
+             reduce(s = 0.0, f in directFriends | s + f.activityScore) as networkActivity
         RETURN {
-            totalReach: CASE WHEN totalReach IS NULL THEN 0 ELSE totalReach END,
-            distribution: CASE WHEN distribution IS NULL THEN [] ELSE distribution END
-        } as result
+          directConnections: directConnections,
+          indirectConnections: indirectConnections,
+          networkActivity: networkActivity,
+          influenceScore: (directConnections * 0.5 + 
+                          indirectConnections * 0.3 + 
+                          networkActivity * 0.2) / 
+                          CASE WHEN directConnections > 0 THEN directConnections 
+                               ELSE 1 END
+        } as influence
       `, { userId });
 
-      const record = result.records[0];
-      if (!record) {
-        return {
-          totalReach: 0,
-          distribution: []
-        };
-      }
-
-      const resultData = record.get('result');
-      return {
-        totalReach: parseInt(resultData.totalReach),
-        distribution: resultData.distribution.map(d => ({
-          distance: parseInt(d.distance),
-          count: parseInt(d.count)
-        }))
-      };
+      return result.records[0]?.get('influence');
     } finally {
       await session.close();
     }
@@ -469,7 +460,7 @@ class Neo4jService {
     }
   }
 
-  // 2.1 智能好友推荐
+  // 修改智能好友推荐方法
   async recommendFriends(userId) {
     const session = this.driver.session();
     try {
@@ -477,40 +468,58 @@ class Neo4jService {
         MATCH (u:User {userId: $userId})-[:FRIEND]->(friend)-[:FRIEND]->(friendOfFriend)
         WHERE NOT (u)-[:FRIEND]->(friendOfFriend)
         AND u <> friendOfFriend
-        WITH friendOfFriend, count(friend) as commonFriends
-        RETURN friendOfFriend.userId as recommendedUserId,
-               commonFriends as commonFriendsCount
+        AND NOT exists((u)-[:FRIEND_REQUEST]->(friendOfFriend))
+        WITH DISTINCT friendOfFriend, count(DISTINCT friend) as commonFriends,
+             collect(DISTINCT friend.userId) as commonFriendIds
+        RETURN 
+          friendOfFriend.userId as recommendedUserId,
+          friendOfFriend.username as username,
+          friendOfFriend.avatar as avatar,
+          toInteger(commonFriends) as commonFriendsCount,
+          commonFriendIds
         ORDER BY commonFriends DESC
-        LIMIT 10
-      `, { userId });
+        LIMIT toInteger($limit)
+      `, { 
+        userId: String(userId),
+        limit: 10  // 确保是整数
+      });
 
       return result.records.map(record => ({
         userId: record.get('recommendedUserId'),
-        commonFriends: parseInt(record.get('commonFriendsCount'))
+        username: record.get('username'),
+        avatar: record.get('avatar'),
+        commonFriendsCount: record.get('commonFriendsCount'),
+        commonFriendIds: record.get('commonFriendIds')
       }));
+    } catch (error) {
+      console.error('获取好友推荐失败:', error);
+      return [];  // 出错时返回空数组而不是抛出错误
     } finally {
       await session.close();
     }
   }
 
   // 2.2 社交路径分析
-  async findConnectionPath(userId1, userId2) {
+  async findSocialPath(userId1, userId2, options = { maxDepth: 4 }) {
     const session = this.driver.session();
     try {
       const result = await session.run(`
-        MATCH path = shortestPath(
-          (u1:User {userId: $userId1})-[:FRIEND*]-(u2:User {userId: $userId2})
-        )
-        WITH [node in nodes(path) | node.userId] as userPath,
-             length(path) as distance
-        RETURN userPath, distance
+        MATCH path = shortestPath((u1:User {userId: $userId1})-[:FRIEND*..${options.maxDepth}]-(u2:User {userId: $userId2}))
+        WITH path,
+             [node in nodes(path) | {
+               userId: node.userId,
+               username: node.username,
+               activityScore: node.activityScore
+             }] as pathNodes,
+             length(path) as pathLength
+        RETURN {
+          nodes: pathNodes,
+          length: pathLength,
+          strength: reduce(s = 0.0, r in relationships(path) | s + r.interactionCount) / pathLength
+        } as pathInfo
       `, { userId1, userId2 });
-      
-      const record = result.records[0];
-      return record ? {
-        path: record.get('userPath'),
-        distance: record.get('distance')
-      } : null;
+
+      return result.records[0]?.get('pathInfo');
     } finally {
       await session.close();
     }
@@ -618,6 +627,324 @@ class Neo4jService {
       `, { userId });
 
       return result.records[0].get('influence');
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 1. 添加互动分析
+  async analyzeInteractions(userId) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {userId: $userId})-[r:FRIEND]-(friend:User)
+        WITH friend, 
+             count(r) as interactions,
+             collect(r.lastInteraction) as interactionDates
+        RETURN {
+          friendId: friend.userId,
+          username: friend.username,
+          interactionCount: interactions,
+          lastInteraction: max(interactionDates),
+          interactionFrequency: interactions / duration.between(min(interactionDates), max(interactionDates)).days
+        } as interactionAnalysis
+        ORDER BY interactions DESC
+        LIMIT 10
+      `, { userId });
+
+      return result.records.map(record => record.get('interactionAnalysis'));
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 2. 添加社交圈重叠度分析
+  async analyzeSocialCircleOverlap(userId1, userId2) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (u1:User {userId: $userId1})-[:FRIEND]-(common:User)-[:FRIEND]-(u2:User {userId: $userId2})
+        WITH count(common) as commonFriends
+        MATCH (u1:User {userId: $userId1})-[:FRIEND]-(f1:User)
+        WITH commonFriends, count(f1) as friends1
+        MATCH (u2:User {userId: $userId2})-[:FRIEND]-(f2:User)
+        WITH commonFriends, friends1, count(f2) as friends2
+        RETURN {
+          commonFriends: commonFriends,
+          overlapRatio: toFloat(commonFriends) / toFloat(friends1 + friends2 - commonFriends),
+          totalConnections: friends1 + friends2
+        } as overlap
+      `, { userId1, userId2 });
+
+      return result.records[0].get('overlap');
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 3. 添加社交趋势分析
+  async analyzeSocialTrends(userId, period = 30) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {userId: $userId})-[r:FRIEND]-(friend:User)
+        WHERE datetime(r.lastInteraction) > datetime() - duration({days: $period})
+        WITH u, 
+             count(friend) as newConnections,
+             collect(friend) as recentFriends
+        RETURN {
+          newConnectionsCount: newConnections,
+          activeConnectionsRatio: toFloat(newConnections) / toFloat(size((u)-[:FRIEND]-())),
+          growthRate: toFloat(newConnections) / $period
+        } as trends
+      `, { userId, period });
+
+      return result.records[0].get('trends');
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 查询二度好友关系
+  async getFriendsOfFriends(userId) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (user:User {userId: $userId})-[:FRIEND]->(friend:User)-[:FRIEND]->(fof:User)
+        WHERE fof.userId <> $userId
+        AND NOT (user)-[:FRIEND]->(fof)
+        WITH fof, count(DISTINCT friend) as commonFriends
+        RETURN {
+          userId: fof.userId,
+          username: fof.username,
+          commonFriendsCount: commonFriends
+        } as recommendation
+        ORDER BY commonFriends DESC
+        LIMIT 10
+      `, { userId });
+
+      return result.records.map(record => record.get('recommendation'));
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 计算社交路径
+  async findShortestPath(userId1, userId2) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH path = shortestPath((u1:User {userId: $userId1})-[:FRIEND*]-(u2:User {userId: $userId2}))
+        UNWIND nodes(path) as user
+        RETURN collect({
+          userId: user.userId,
+          username: user.username
+        }) as pathNodes
+      `, { userId1, userId2 });
+
+      return result.records[0]?.get('pathNodes') || [];
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 计算用户影响力分数
+  async calculateInfluenceScore(userId) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {userId: $userId})-[:FRIEND]-(friend:User)
+        WITH u, count(friend) as directFriends
+        MATCH (u)-[:FRIEND]-()-[:FRIEND]-(fof:User)
+        WHERE NOT (u)-[:FRIEND]-(fof) AND u <> fof
+        WITH u, directFriends, count(DISTINCT fof) as indirectFriends
+        RETURN {
+          directFriends: directFriends,
+          indirectFriends: indirectFriends,
+          influenceScore: directFriends * 0.6 + indirectFriends * 0.4
+        } as influence
+      `, { userId });
+
+      return result.records[0]?.get('influence');
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 1. 好友分组管理
+  async createFriendGroup(userId, groupName) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {userId: $userId})
+        MERGE (g:FriendGroup {name: $groupName, ownerId: $userId})
+        MERGE (u)-[r:OWNS]->(g)
+        RETURN g
+      `, { userId, groupName });
+      return result.records[0]?.get('g').properties;
+    } finally {
+      await session.close();
+    }
+  }
+
+  async addFriendToGroup(userId, friendId, groupName) {
+    const session = this.driver.session();
+    try {
+      await session.run(`
+        MATCH (g:FriendGroup {name: $groupName, ownerId: $userId})
+        MATCH (f:User {userId: $friendId})
+        MERGE (g)-[r:CONTAINS]->(f)
+        SET r.addedAt = datetime()
+      `, { userId, friendId, groupName });
+    } finally {
+      await session.close();
+    }
+  }
+
+  async getFriendGroups(userId) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {userId: $userId})-[:OWNS]->(g:FriendGroup)
+        OPTIONAL MATCH (g)-[:CONTAINS]->(f:User)
+        WITH g, collect(f) as members
+        RETURN {
+          name: g.name,
+          memberCount: size(members),
+          members: [m in members | {
+            userId: m.userId,
+            username: m.username
+          }]
+        } as groupInfo
+      `, { userId });
+      return result.records.map(record => record.get('groupInfo'));
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 1. 更新用户在线状态
+  async updateUserOnlineStatus(userId, isOnline) {
+    const session = this.driver.session();
+    try {
+      await session.run(`
+        MATCH (u:User {userId: $userId})
+        SET u.isOnline = $isOnline,
+            u.lastActiveAt = datetime()
+        RETURN u
+      `, { 
+        userId,
+        isOnline
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 2. 记录好友互动历史
+  async recordFriendInteraction(userId1, userId2, interactionType) {
+    const session = this.driver.session();
+    try {
+      await session.run(`
+        MATCH (u1:User {userId: $userId1})-[r:FRIEND]-(u2:User {userId: $userId2})
+        SET r.interactionCount = coalesce(r.interactionCount, 0) + 1,
+            r.lastInteraction = datetime()
+        CREATE (u1)-[i:INTERACTS {
+          type: $interactionType,
+          timestamp: datetime()
+        }]->(u2)
+        RETURN i
+      `, {
+        userId1,
+        userId2,
+        interactionType
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 3. 获取好友互动历史
+  async getFriendInteractionHistory(userId1, userId2, limit = 10) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (u1:User {userId: $userId1})-[i:INTERACTS]->(u2:User {userId: $userId2})
+        RETURN {
+          type: i.type,
+          timestamp: datetime(i.timestamp)
+        } as interaction
+        ORDER BY i.timestamp DESC
+        LIMIT toInteger($limit)
+      `, {
+        userId1,
+        userId2,
+        limit: parseInt(limit)
+      });
+
+      return result.records.map(record => record.get('interaction'));
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 4. 获取好友活跃状态
+  async getFriendsOnlineStatus(userId) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {userId: $userId})-[:FRIEND]-(friend:User)
+        RETURN {
+          userId: friend.userId,
+          username: friend.username,
+          isOnline: friend.isOnline,
+          lastActiveAt: datetime(friend.lastActiveAt)
+        } as friendStatus
+        ORDER BY friend.lastActiveAt DESC
+      `, { userId });
+
+      return result.records.map(record => record.get('friendStatus'));
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 5. 获取最近互动的好友
+  async getRecentlyInteractedFriends(userId, limit = 5) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {userId: $userId})-[r:FRIEND]-(friend:User)
+        WHERE exists(r.lastInteraction)
+        RETURN {
+          userId: friend.userId,
+          username: friend.username,
+          lastInteraction: datetime(r.lastInteraction),
+          interactionCount: r.interactionCount
+        } as friendInteraction
+        ORDER BY r.lastInteraction DESC
+        LIMIT $limit
+      `, {
+        userId,
+        limit: parseInt(limit)
+      });
+
+      return result.records.map(record => record.get('friendInteraction'));
+    } finally {
+      await session.close();
+    }
+  }
+
+  // 添加获取用户在线状态的方法
+  async getUserOnlineStatus(userId) {
+    const session = this.driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {userId: $userId})
+        RETURN u.isOnline as isOnline
+      `, { userId });
+      
+      return result.records[0]?.get('isOnline') || false;
     } finally {
       await session.close();
     }

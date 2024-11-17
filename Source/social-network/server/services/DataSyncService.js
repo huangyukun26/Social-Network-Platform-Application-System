@@ -15,14 +15,14 @@ class DataSyncService {
 
             for (const user of users) {
                 try {
-                    await this.neo4jService.syncUserToNeo4j(
-                        user._id.toString(),
-                        {
-                            username: user.username,
-                            interests: Array.isArray(user.interests) ? user.interests : [],
-                            activityScore: user.activityMetrics?.interactionFrequency || 0
+                    await this.neo4jService.syncUserToNeo4j({
+                        _id: user._id,
+                        username: user.username,
+                        interests: Array.isArray(user.interests) ? user.interests : [],
+                        activityMetrics: {
+                            interactionFrequency: user.activityMetrics?.interactionFrequency || 0
                         }
-                    );
+                    });
                     console.log(`用户 ${user.username} 同步成功`);
                 } catch (error) {
                     console.error(`用户 ${user.username} 同步失败:`, error);
@@ -146,6 +146,94 @@ class DataSyncService {
         } catch (error) {
             console.error('数据同步失败:', error);
             throw error;
+        }
+    }
+
+    // 验证在线状态一致性
+    async validateOnlineStatus() {
+        try {
+            const users = await User.find({});
+            for (const user of users) {
+                const neo4jStatus = await this.neo4jService.getUserOnlineStatus(user._id.toString());
+                const mongoStatus = user.onlineStatus?.isOnline || false;
+                
+                if (neo4jStatus !== mongoStatus) {
+                    console.log(`用户 ${user.username} 在线状态不一致:`, {
+                        mongodb: mongoStatus,
+                        neo4j: neo4jStatus
+                    });
+                    return false;
+                }
+            }
+            return true;
+        } catch (error) {
+            console.error('验证在线状态失败:', error);
+            return false;
+        }
+    }
+
+    // 验证好友分组一致性
+    async validateFriendGroups() {
+        try {
+            const users = await User.find({});
+            for (const user of users) {
+                const neo4jGroups = await this.neo4jService.getFriendGroups(user._id.toString());
+                const mongoGroups = user.friendGroups || [];
+                
+                // 比较分组数量
+                if (neo4jGroups.length !== mongoGroups.length) {
+                    console.log(`用户 ${user.username} 好友分组数量不一致:`, {
+                        mongodb: mongoGroups.length,
+                        neo4j: neo4jGroups.length
+                    });
+                    return false;
+                }
+
+                // 比较每个分组的成员
+                for (const mongoGroup of mongoGroups) {
+                    const neo4jGroup = neo4jGroups.find(g => g.name === mongoGroup.name);
+                    if (!neo4jGroup || 
+                        neo4jGroup.members.length !== mongoGroup.members.length) {
+                        console.log(`用户 ${user.username} 分组 ${mongoGroup.name} 成员不一致`);
+                        return false;
+                    }
+                }
+            }
+            return true;
+        } catch (error) {
+            console.error('验证好友分组失败:', error);
+            return false;
+        }
+    }
+
+    // 验证互动记录一致性
+    async validateInteractions() {
+        try {
+            const users = await User.find({});
+            for (const user of users) {
+                if (!user.friendships) continue;
+
+                for (const friendship of user.friendships) {
+                    const neo4jInteractions = await this.neo4jService.getFriendInteractionHistory(
+                        user._id.toString(),
+                        friendship.friend.toString()
+                    );
+                    
+                    const mongoInteractions = friendship.interactions || [];
+                    
+                    if (neo4jInteractions.length !== mongoInteractions.length) {
+                        console.log(`用户 ${user.username} 与好友的互动记录数量不一致:`, {
+                            mongodb: mongoInteractions.length,
+                            neo4j: neo4jInteractions.length
+                        });
+                        return false;
+                    }
+                }
+            }
+            return true;
+        } catch (error) {
+            console.error('验证互动记录失败:', error);
+            return false;
         }
     }
 }

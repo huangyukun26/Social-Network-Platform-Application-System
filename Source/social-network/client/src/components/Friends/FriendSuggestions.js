@@ -45,13 +45,25 @@ const FriendSuggestions = ({ onUpdate }) => {
     const fetchSuggestions = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get('http://localhost:5000/api/friends/suggestions', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setSuggestions(response.data);
+            const [basicResponse, smartResponse] = await Promise.all([
+                axios.get('http://localhost:5000/api/friends/suggestions', {
+                    headers: { Authorization: `Bearer ${token}` }
+                }),
+                axios.get('http://localhost:5000/api/friends/smart-recommendations', {
+                    headers: { Authorization: `Bearer ${token}` }
+                })
+            ]);
+
+            // 合并基础推荐和智能推荐
+            const allSuggestions = [...smartResponse.data, ...basicResponse.data];
+            // 去重
+            const uniqueSuggestions = Array.from(new Set(allSuggestions.map(s => s._id)))
+                .map(id => allSuggestions.find(s => s._id === id));
+                
+            setSuggestions(uniqueSuggestions);
         } catch (error) {
+            console.error('获取推荐失败:', error);
             message.error('获取推荐好友失败');
-            console.error('获取推荐好友失败:', error);
         } finally {
             setLoading(false);
         }
@@ -82,18 +94,6 @@ const FriendSuggestions = ({ onUpdate }) => {
     };
 
     const renderUserInfo = (user) => {
-        const displayInfo = {
-            _id: user._id,
-            username: user.username,
-            avatar: user.avatar,
-            bio: user.privacy?.profileVisibility === 'private' 
-                ? '这是一个私密账户'
-                : (user.bio || '这个人很懒，什么都没写~'),
-            statistics: user.privacy?.profileVisibility === 'private'
-                ? null
-                : user.statistics
-        };
-
         return (
             <List.Item.Meta
                 avatar={
@@ -114,11 +114,16 @@ const FriendSuggestions = ({ onUpdate }) => {
                 }
                 description={
                     <div>
-                        <div>{displayInfo.bio}</div>
-                        {displayInfo.statistics && (
+                        <div>{user.bio || '这个人很懒，什么都没写~'}</div>
+                        {user.recommendReason && (
+                            <div style={{ marginTop: 4, color: '#389e0d', fontSize: 12 }}>
+                                {user.recommendReason}
+                            </div>
+                        )}
+                        {user.statistics && (
                             <div style={{ marginTop: 8, color: '#8e8e8e', fontSize: 12 }}>
-                                {displayInfo.statistics.postsCount} 帖子 · 
-                                {displayInfo.statistics.friendsCount} 好友
+                                {user.statistics.postsCount} 帖子 · 
+                                {user.statistics.friendsCount} 好友
                             </div>
                         )}
                     </div>

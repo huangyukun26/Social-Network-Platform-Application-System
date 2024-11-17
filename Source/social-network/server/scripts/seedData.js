@@ -33,11 +33,27 @@ async function seedTestData() {
         email: `test${i}@example.com`,
         password: 'test123456',
         bio: `这是测试用户${i}的简介`,
-        stats: {
-          postsCount: Math.floor(Math.random() * 50),
-          friendsCount: 0,
-          likesCount: Math.floor(Math.random() * 100)
-        }
+        onlineStatus: {
+          isOnline: Math.random() > 0.5,
+          lastActiveAt: new Date(),
+          deviceInfo: {
+            type: Math.random() > 0.5 ? 'mobile' : 'desktop',
+            browser: 'Chrome'
+          }
+        },
+        friendGroups: [
+          {
+            name: '好友',
+            description: '默认分组',
+            members: []
+          },
+          {
+            name: '同学',
+            description: '学校朋友',
+            members: []
+          }
+        ],
+        interests: ['音乐', '电影', '旅行', '美食'].slice(0, Math.floor(Math.random() * 4) + 1)
       });
       
       // 同步到Neo4j
@@ -92,6 +108,14 @@ async function seedTestData() {
       console.log(`创建好友关系: ${user.username} - ${friend.username}`);
     }
 
+    // 创建一些在线状态变化
+    for(const user of testUsers) {
+      await neo4jService.updateUserOnlineStatus(
+        user._id.toString(),
+        Math.random() > 0.5
+      );
+    }
+
     console.log('\n测试账号信息:');
     testUsers.forEach(user => {
       console.log(`用户名: ${user.username}`);
@@ -99,6 +123,12 @@ async function seedTestData() {
       console.log(`密码: test123456`);
       console.log('-------------------');
     });
+
+    console.log('\n测试数据创建完成，包含:');
+    console.log('- 用户在线状态');
+    console.log('- 好友分组');
+    console.log('- 互动记录');
+    console.log('- 兴趣标签');
 
   } catch (error) {
     console.error('添加测试数据失败:', error);

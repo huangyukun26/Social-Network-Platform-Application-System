@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const RedisClient = require('../utils/RedisClient');
+const neo4jService = require('../services/neo4jService');
 
 // 配置 multer 存储
 const storage = multer.diskStorage({
@@ -219,7 +220,7 @@ router.get('/:userId', auth, checkPrivacy, async (req, res) => {
 
         res.json(user);
     } catch (error) {
-        console.error('获取��户资料失败:', error);
+        console.error('获取户资料失败:', error);
         res.status(500).json({ message: '获取用户资料失败' });
     }
 });
@@ -263,7 +264,7 @@ router.post('/login', async (req, res) => {
         );
 
         try {
-            // 创��分布式会话
+            // 创分布式会话
             const sessionId = await RedisClient.setUserSession(user._id, {
                 userId: user._id,
                 deviceInfo: req.body.deviceInfo || {},
@@ -440,6 +441,103 @@ router.put('/profile', auth, upload.single('avatar'), async (req, res) => {
         console.error('更新个人资料错误:', error);
         res.status(500).json({ message: '更新失败' });
     }
+});
+
+// 更新在线状态
+router.post('/status/online', auth, async (req, res) => {
+  try {
+    const { isOnline, deviceInfo } = req.body;
+    const user = await User.findById(req.userId);
+    
+    user.onlineStatus.isOnline = isOnline;
+    user.onlineStatus.lastActiveAt = new Date();
+    if (deviceInfo) {
+      user.onlineStatus.deviceInfo = deviceInfo;
+    }
+    
+    await user.save();
+    
+    // 更新 Neo4j
+    await neo4jService.updateUserOnlineStatus(req.userId, isOnline);
+    
+    res.json({ message: '状态更新成功' });
+  } catch (error) {
+    console.error('更新在线状态失败:', error);
+    res.status(500).json({ message: '更新状态失败' });
+  }
+});
+
+// 获取用户社交统计
+router.get('/:userId/social-stats', auth, checkPrivacy, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId)
+      .populate('friendships.friend', 'username avatar')
+      .populate('friendGroups', 'name membersCount');
+    
+    const stats = {
+      totalFriends: user.friends.length,
+      closeFriends: user.friendships.filter(f => f.status === 'close').length,
+      groupsCount: user.friendGroups.length,
+      averageInteractions: user.activityMetrics.interactionFrequency,
+      lastActive: user.onlineStatus.lastActiveAt
+    };
+    
+    res.json(stats);
+  } catch (error) {
+    console.error('获取社交统计失败:', error);
+    res.status(500).json({ message: '获取统计失败' });
+  }
+});
+
+// 管理好友分组
+router.post('/groups', auth, async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const user = await User.findById(req.userId);
+    
+    user.friendGroups.push({
+      name,
+      description,
+      members: []
+    });
+    
+    await user.save();
+    res.json(user.friendGroups[user.friendGroups.length - 1]);
+  } catch (error) {
+    console.error('创建好友分组失败:', error);
+    res.status(500).json({ message: '创建分组失败' });
+  }
+});
+
+// 更新好友关系状态
+router.put('/friendship/:friendId', auth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const user = await User.findById(req.userId);
+    
+    const friendship = user.friendships.find(
+      f => f.friend.toString() === req.params.friendId
+    );
+    
+    if (friendship) {
+      friendship.status = status;
+      await user.save();
+      
+      // 同步到 Neo4j
+      await neo4jService.updateFriendshipStatus(
+        req.userId,
+        req.params.friendId,
+        status
+      );
+      
+      res.json(friendship);
+    } else {
+      res.status(404).json({ message: '好友关系不存在' });
+    }
+  } catch (error) {
+    console.error('更新好友关系失败:', error);
+    res.status(500).json({ message: '更新关系失败' });
+  }
 });
 
 // 导出路由

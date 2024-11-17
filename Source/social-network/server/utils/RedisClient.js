@@ -159,7 +159,7 @@ class RedisClient {
         const key = `friendship:${userId}:${targetId}`;
         const result = await this.client.get(key);
         
-        // 添加性能追踪
+        // 加性能追踪
         await this.trackCacheMetrics(key, startTime, !!result);
         
         return result;
@@ -188,20 +188,18 @@ class RedisClient {
     }
 
     // 好友推荐缓存
-    async getFriendSuggestions(userId) {
+    async getFriendRecommendations(userId) {
         const startTime = performance.now();
-        const key = `friend:suggestions:${userId}`;
+        const key = `friend:recommendations:${userId}`;
         const cached = await this.client.get(key);
         
-        // 添加性能追踪
         await this.trackCacheMetrics(key, startTime, !!cached);
-        
         return cached ? JSON.parse(cached) : null;
     }
 
-    async setFriendSuggestions(userId, suggestions, expiry = 300) {
-        const key = `friend:suggestions:${userId}`;
-        await this.client.set(key, JSON.stringify(suggestions), 'EX', expiry);
+    async setFriendRecommendations(userId, recommendations, expiry = 300) {
+        const key = `friend:recommendations:${userId}`;
+        await this.client.set(key, JSON.stringify(recommendations), 'EX', expiry);
     }
 
     // 缓存失效方法
@@ -268,7 +266,7 @@ class RedisClient {
             // 获取用户现有的会话
             const existingSessions = await this.getUserActiveSessions(userId);
             
-            // 如���存在其他会话，将其标记为已过期
+            // 如存在其他会话，将其标记为已过期
             for (const session of existingSessions) {
                 if (session.deviceInfo?.userAgent === sessionData.deviceInfo?.userAgent) {
                     await this.removeSession(userId, session.sessionId);
@@ -423,7 +421,7 @@ class RedisClient {
             const patterns = [
                 `friend:*:${userId}*`,
                 `friends:list:${userId}*`,
-                `friend:suggestions:${userId}*`,
+                `friend:recommendations:${userId}*`,
                 `friendship:${userId}:*`,
                 `session:${userId}:*`
             ];
@@ -454,7 +452,7 @@ class RedisClient {
             const patterns = [
                 'friend:*',
                 'friends:list:*',
-                'friend:suggestions:*',
+                'friend:recommendations:*',
                 'friendship:*',
                 'session:*'
             ];
@@ -474,6 +472,146 @@ class RedisClient {
             console.error('清理所有缓存失败:', error);
             // 不抛出错误，避免影响主流程
         }
+    }
+
+    // 1. 好友在线状态缓存
+    async setUserOnlineStatus(userId, isOnline) {
+        const key = `user:online:${userId}`;
+        await this.client.set(key, isOnline.toString(), 'EX', 300); // 5分钟过期
+    }
+
+    async getFriendsOnlineStatus(userId) {
+        try {
+            const key = `friends:online:${userId}`;
+            const result = await this.client.get(key);
+            return result ? JSON.parse(result) : null;
+        } catch (error) {
+            console.error('Redis获取在线状态失败:', error);
+            return null;
+        }
+    }
+
+    async setFriendsOnlineStatus(userId, statusData) {
+        try {
+            const key = `friends:online:${userId}`;
+            await this.client.set(
+                key,
+                JSON.stringify(statusData),
+                'EX',
+                60  // 1分钟过期
+            );
+            return true;
+        } catch (error) {
+            console.error('Redis设置在线状态失败:', error);
+            return false;
+        }
+    }
+
+    // 2. 好友互动历史缓存
+    async getFriendInteractionHistory(userId1, userId2) {
+        const startTime = performance.now();
+        const key = `friend:interactions:${userId1}:${userId2}`;
+        const cached = await this.client.get(key);
+        
+        await this.trackCacheMetrics(key, startTime, !!cached);
+        return cached ? JSON.parse(cached) : null;
+    }
+
+    async setFriendInteractionHistory(userId1, userId2, history, expiry = 300) {
+        const key = `friend:interactions:${userId1}:${userId2}`;
+        await this.client.set(key, JSON.stringify(history), 'EX', expiry);
+    }
+
+    // 3. 好友分组缓存
+    async getFriendGroups(userId) {
+        const startTime = performance.now();
+        const key = `friend:groups:${userId}`;
+        const cached = await this.client.get(key);
+        
+        await this.trackCacheMetrics(key, startTime, !!cached);
+        return cached ? JSON.parse(cached) : null;
+    }
+
+    async setFriendGroups(userId, groups, expiry = 300) {
+        const key = `friend:groups:${userId}`;
+        await this.client.set(key, JSON.stringify(groups), 'EX', expiry);
+    }
+
+    // 4. 清除相关缓存的方法
+    async clearFriendInteractionCache(userId1, userId2) {
+        const keys = [
+            `friend:interactions:${userId1}:${userId2}`,
+            `friend:interactions:${userId2}:${userId1}`
+        ];
+        await this.client.del(keys);
+    }
+
+    // 5. 扩展现有的 clearUserCache 方法
+    async clearUserCache(userId) {
+        try {
+            console.log('开始清理用户缓存:', userId);
+            
+            // 添加新的缓存模式
+            const patterns = [
+                ...this.patterns, // 保持现有的模式
+                `user:online:${userId}*`,
+                `friends:online:${userId}*`,
+                `friend:interactions:${userId}:*`,
+                `friend:groups:${userId}*`
+            ];
+            
+            const deletePromises = patterns.map(async pattern => {
+                const keys = await this.client.keys(pattern);
+                if (keys.length > 0) {
+                    console.log(`删除缓存键: ${keys.join(', ')}`);
+                    await this.client.del(keys);
+                }
+            });
+            
+            await Promise.all(deletePromises);
+            console.log('用户缓存清理完成:', userId);
+        } catch (error) {
+            console.error('清理用户缓存失败:', error);
+        }
+    }
+
+    // 修改方法名，保持一致性
+    async getFriendSuggestions(userId) {
+        const startTime = performance.now();
+        const key = `friend:suggestions:${userId}`;
+        const cached = await this.client.get(key);
+        
+        await this.trackCacheMetrics(key, startTime, !!cached);
+        return cached ? JSON.parse(cached) : null;
+    }
+
+    async setFriendSuggestions(userId, suggestions, expiry = 300) {
+        const key = `friend:suggestions:${userId}`;
+        await this.client.set(key, JSON.stringify(suggestions), 'EX', expiry);
+    }
+
+    // 智能推荐相关方法
+    async getSmartRecommendations(userId) {
+        const startTime = performance.now();
+        const key = `friend:smart-recommendations:${userId}`;
+        const cached = await this.client.get(key);
+        
+        await this.trackCacheMetrics(key, startTime, !!cached);
+        return cached ? JSON.parse(cached) : null;
+    }
+
+    async setSmartRecommendations(userId, recommendations, expiry = 300) {
+        const key = `friend:smart-recommendations:${userId}`;
+        await this.client.set(key, JSON.stringify(recommendations), 'EX', expiry);
+    }
+
+    // 清除推荐缓存
+    async clearRecommendationsCache(userId) {
+        const keys = [
+            `friend:suggestions:${userId}`,
+            `friend:smart-recommendations:${userId}`
+        ];
+        await this.client.del(keys);
     }
 }
 

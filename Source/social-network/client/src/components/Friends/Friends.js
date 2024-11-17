@@ -14,6 +14,7 @@ import FriendSuggestions from './FriendSuggestions';
 import UserSearch from './UserSearch';
 import SocialAnalytics from './Analytics/SocialAnalytics';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const { TabPane } = Tabs;
 
@@ -43,54 +44,65 @@ const Friends = () => {
   const [friends, setFriends] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const fetchFriendData = async () => {
-    setLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = sessionStorage.getItem('token');
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
+      setLoading(true);
       const headers = { Authorization: `Bearer ${token}` };
       
-      const [requestsResponse, friendsResponse, suggestionsResponse] = await Promise.all([
-        axios.get('http://localhost:5000/api/friends/requests', { headers }),
-        axios.get('http://localhost:5000/api/friends', { headers }),
-        axios.get('http://localhost:5000/api/friends/suggestions', { headers })
-      ]);
+      try {
+        const [friendsResponse, requestsResponse] = await Promise.all([
+          axios.get('http://localhost:5000/api/friends', { headers }),
+          axios.get('http://localhost:5000/api/friends/requests', { headers })
+        ]);
 
-      setFriendRequests(requestsResponse.data);
-      setFriends(friendsResponse.data);
-      setSuggestions(suggestionsResponse.data);
+        setFriends(friendsResponse.data);
+        setFriendRequests(requestsResponse.data);
+
+        if (activeTab === '3') {
+          const suggestionsResponse = await axios.get(
+            'http://localhost:5000/api/friends/suggestions',
+            { headers }
+          );
+          setSuggestions(suggestionsResponse.data);
+        }
+      } catch (error) {
+        if (error.response && error.response.status === 401) {
+          sessionStorage.removeItem('token');
+          navigate('/login');
+          return;
+        }
+        throw error;
+      }
     } catch (error) {
+      console.error('获取好友数据失败:', error);
       message.error('获取好友数据失败');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRequestUpdate = async (updatedFriends) => {
+  const handleRequestUpdate = async () => {
     try {
+      const token = sessionStorage.getItem('token');
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+
       setLoading(true);
-      const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
       
       await axios.post('http://localhost:5000/api/friends/sync', {}, { headers });
       
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const [friendsResponse, requestsResponse] = await Promise.all([
-        axios.get('http://localhost:5000/api/friends', { headers }),
-        axios.get('http://localhost:5000/api/friends/requests', { headers })
-      ]);
-
-      setFriends(friendsResponse.data);
-      setFriendRequests(requestsResponse.data);
-      
-      if (activeTab === '3') {
-        const suggestionsResponse = await axios.get(
-          'http://localhost:5000/api/friends/suggestions', 
-          { headers }
-        );
-        setSuggestions(suggestionsResponse.data);
-      }
+      await fetchFriendData();
     } catch (error) {
       console.error('更新好友数据失败:', error);
       message.error('更新好友数据失败');
@@ -100,22 +112,36 @@ const Friends = () => {
   };
 
   useEffect(() => {
+    const token = sessionStorage.getItem('token');
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
     fetchFriendData();
     
     const interval = setInterval(() => {
-      if (!loading) {
+      const currentToken = sessionStorage.getItem('token');
+      if (currentToken) {
         fetchFriendData();
       }
-    }, 30000);
+    }, 60000);
 
     return () => clearInterval(interval);
-  }, [loading]);
+  }, [activeTab, navigate]);
+
+  const handleTabChange = (key) => {
+    setActiveTab(key);
+    if (key === '3') {
+      fetchFriendData();
+    }
+  };
 
   return (
     <FriendsContainer>
       <StyledTabs 
         activeKey={activeTab} 
-        onChange={setActiveTab}
+        onChange={handleTabChange}
         loading={loading}
       >
         <TabPane 
@@ -155,8 +181,9 @@ const Friends = () => {
           key="2"
         >
           <FriendsList 
+            onFriendUpdate={fetchFriendData}
             friends={friends}
-            onUpdate={fetchFriendData} 
+            loading={loading}
           />
         </TabPane>
         <TabPane 

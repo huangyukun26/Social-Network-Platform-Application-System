@@ -124,6 +124,9 @@ const userSchema = new mongoose.Schema({
         },
         commonInterests: [{
             type: String
+        }],
+        groupIds: [{
+            type: String
         }]
     }],
     interests: [{
@@ -161,6 +164,35 @@ const userSchema = new mongoose.Schema({
             type: String,
             enum: ['close_friends', 'family', 'colleagues', 'custom'],
             default: 'custom'
+        }
+    }],
+    onlineStatus: {
+        isOnline: {
+            type: Boolean,
+            default: false
+        },
+        lastActiveAt: {
+            type: Date,
+            default: Date.now
+        },
+        deviceInfo: {
+            type: Object,
+            default: {}
+        }
+    },
+    friendGroups: [{
+        name: {
+            type: String,
+            required: true
+        },
+        description: String,
+        members: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        }],
+        createdAt: {
+            type: Date,
+            default: Date.now
         }
     }]
 });

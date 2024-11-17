@@ -26,38 +26,39 @@ async function migrateFriendSystem() {
         const result = await User.updateMany(
             {
                 $or: [
+                    { onlineStatus: { $exists: false } },
+                    { friendGroups: { $exists: false } },
                     { interactions: { $exists: false } },
-                    { friendships: { $exists: false } },
-                    { interests: { $exists: false } },
-                    { activityMetrics: { $exists: false } },
-                    { socialCircles: { $exists: false } }
+                    { friendships: { $exists: false } }
                 ]
             },
             {
                 $set: {
+                    onlineStatus: {
+                        isOnline: false,
+                        lastActiveAt: new Date(),
+                        deviceInfo: {}
+                    },
+                    friendGroups: [],
                     interactions: [],
                     friendships: [],
-                    interests: [],
                     activityMetrics: {
                         lastActive: new Date(),
                         loginCount: 0,
                         postFrequency: 0,
                         interactionFrequency: 0
-                    },
-                    socialCircles: []
+                    }
                 }
             }
         );
 
-        console.log('基础字段迁移完成:', {
+        console.log('新字段迁移完成:', {
             matched: result.matchedCount,
             modified: result.modifiedCount
         });
 
-        // 2. 将现有好友关系转换为新的friendships格式
+        // 2. 转换现有好友关系为新格式
         const users = await User.find({}).toArray();
-        let friendshipUpdates = 0;
-
         for (const user of users) {
             if (user.friends && user.friends.length > 0) {
                 const friendships = user.friends.map(friendId => ({
@@ -65,21 +66,16 @@ async function migrateFriendSystem() {
                     status: 'regular',
                     interactionCount: 0,
                     lastInteraction: new Date(),
-                    commonInterests: []
+                    commonInterests: [],
+                    groupIds: []
                 }));
 
                 await User.updateOne(
                     { _id: user._id },
                     { $set: { friendships: friendships } }
                 );
-                friendshipUpdates++;
             }
         }
-
-        console.log('好友关系转换完成:', {
-            usersProcessed: users.length,
-            friendshipsUpdated: friendshipUpdates
-        });
 
         // 3. 更新Neo4j数据
         // 注入配置到全局，以便Neo4jService使用

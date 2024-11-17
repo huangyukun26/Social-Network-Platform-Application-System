@@ -36,9 +36,10 @@ const ActivityAnalysis = ({ data }) => {
         <Col span={8}>
           <Statistic
             title="活跃度评分"
-            value={data.activityScore.toFixed(2)}
+            value={parseFloat(data.activityScore).toFixed(2)}
             prefix={<LineChartOutlined />}
             valueStyle={{ color: '#722ed1' }}
+            suffix="/100"
           />
         </Col>
       </Row>

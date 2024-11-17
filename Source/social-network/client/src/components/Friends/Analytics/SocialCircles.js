@@ -37,13 +37,15 @@ const MemberList = styled(List)`
   }
 `;
 
-const SocialCircles = ({ data }) => {
+const SocialCircles = ({ data, onMemberClick }) => {
   const getCircleLabel = (type) => {
     switch(type) {
       case 'close':
         return { text: '亲密圈子', color: '#52c41a' };
+      case 'regular':
+        return { text: '日常圈子', color: '#1890ff' };
       case 'distant':
-        return { text: '普通圈子', color: '#1890ff' };
+        return { text: '普通圈子', color: '#faad14' };
       default:
         return { text: '其他圈子', color: '#d9d9d9' };
     }
