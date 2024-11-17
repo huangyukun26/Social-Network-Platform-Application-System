@@ -45,6 +45,14 @@ const FriendSuggestions = ({ onUpdate }) => {
     const fetchSuggestions = async () => {
         try {
             const token = localStorage.getItem('token');
+            
+            // 获取当前好友列表
+            const friendsResponse = await axios.get('http://localhost:5000/api/friends', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const currentFriends = new Set(friendsResponse.data.map(friend => friend._id));
+
+            // 获取推荐
             const [basicResponse, smartResponse] = await Promise.all([
                 axios.get('http://localhost:5000/api/friends/suggestions', {
                     headers: { Authorization: `Bearer ${token}` }
@@ -54,11 +62,28 @@ const FriendSuggestions = ({ onUpdate }) => {
                 })
             ]);
 
-            // 合并基础推荐和智能推荐
-            const allSuggestions = [...smartResponse.data, ...basicResponse.data];
-            // 去重
-            const uniqueSuggestions = Array.from(new Set(allSuggestions.map(s => s._id)))
-                .map(id => allSuggestions.find(s => s._id === id));
+            // 确保所有推荐都有完整的用户信息
+            const validSmartRecommendations = smartResponse.data.filter(user => 
+                user && user._id && user.username
+            );
+            const validBasicRecommendations = basicResponse.data.filter(user => 
+                user && user._id && user.username
+            );
+
+            // 合并推荐并过滤掉已是好友的用户
+            const allSuggestions = [...validSmartRecommendations, ...validBasicRecommendations]
+                .filter(user => !currentFriends.has(user._id));
+
+            // 使用 Map 去重，确保只保留有效的完整用户数据
+            const uniqueMap = new Map();
+            allSuggestions.forEach(user => {
+                if (!uniqueMap.has(user._id)) {
+                    uniqueMap.set(user._id, user);
+                }
+            });
+
+            const uniqueSuggestions = Array.from(uniqueMap.values());
+            console.log('最终推荐列表:', uniqueSuggestions);
                 
             setSuggestions(uniqueSuggestions);
         } catch (error) {
