@@ -749,6 +749,50 @@ class RedisClient {
         const key = `social:influence:${userId}`;
         await this.client.set(key, JSON.stringify(influence), 'EX', expiry);
     }
+
+    // 消息相关的缓存方法
+    async cacheMessage(messageId, message, expiry = 3600) {
+        const key = `message:${messageId}`;
+        await this.client.set(key, JSON.stringify(message), 'EX', expiry);
+    }
+
+    async getCachedMessage(messageId) {
+        const key = `message:${messageId}`;
+        const message = await this.client.get(key);
+        return message ? JSON.parse(message) : null;
+    }
+
+    // 未读消息计数管理
+    async incrUnreadMessages(userId, senderId) {
+        const key = `unread_messages:${userId}`;
+        await this.client.hincrby(key, senderId, 1);
+    }
+
+    async getUnreadMessagesCount(userId) {
+        const key = `unread_messages:${userId}`;
+        const counts = await this.client.hgetall(key);
+        return Object.entries(counts).map(([senderId, count]) => ({
+            senderId,
+            count: parseInt(count)
+        }));
+    }
+
+    async clearUnreadMessages(userId, senderId) {
+        const key = `unread_messages:${userId}`;
+        await this.client.hdel(key, senderId);
+    }
+
+    // 最近消息缓存
+    async cacheRecentMessages(userId1, userId2, messages, expiry = 300) {
+        const key = `recent_messages:${userId1}:${userId2}`;
+        await this.client.set(key, JSON.stringify(messages), 'EX', expiry);
+    }
+
+    async getRecentMessages(userId1, userId2) {
+        const key = `recent_messages:${userId1}:${userId2}`;
+        const messages = await this.client.get(key);
+        return messages ? JSON.parse(messages) : null;
+    }
 }
 
 // 创建单例实例

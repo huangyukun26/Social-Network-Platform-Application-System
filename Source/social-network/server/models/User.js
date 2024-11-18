@@ -194,6 +194,35 @@ const userSchema = new mongoose.Schema({
             type: Date,
             default: Date.now
         }
+    }],
+    messageSettings: {
+        allowDirectMessages: {
+            type: Boolean,
+            default: true
+        },
+        messagePrivacy: {
+            type: String,
+            enum: ['everyone', 'friends', 'none'],
+            default: 'everyone'
+        },
+        notificationPreferences: {
+            newMessage: {
+                type: Boolean,
+                default: true
+            },
+            messageRead: {
+                type: Boolean,
+                default: true
+            },
+            typing: {
+                type: Boolean,
+                default: true
+            }
+        }
+    },
+    activeChats: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Chat'
     }]
 });
 

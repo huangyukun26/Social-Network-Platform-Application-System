@@ -425,7 +425,7 @@ class Neo4jService {
     }
   }
 
-  // 修改智能好友推荐方法
+  // 智能好友推荐方法
   async recommendFriends(userId) {
     const session = this.driver.session();
     try {

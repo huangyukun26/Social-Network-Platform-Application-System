@@ -429,24 +429,33 @@ token:{userId}:{deviceId}     // Token键
    - 添加性能指标采集
    - 实现告警机制
 
-### 1.3 Neo4j 图数据库 ✅
+### 1.4 Neo4j 图数据库设计 ✅
 ```javascript
-// 社交关系图谱
-{
-    nodes: User,           // 用户节点
-    relationships: {
-        FRIEND: {         // 好友关系
-            from: User,
-            to: User,
-            properties: {
-                since: Date
-            }
-        }
-    }
-}
+// 节点类型
+(:User {
+    userId: String,
+    username: String,
+    createdAt: DateTime
+})
 
-// 主要查询
-- 社交圈子分析
-- 影响力分布计算
-- 好友关系路径
+// 关系类型
+[:FRIEND {
+    since: DateTime,
+    strength: Number,  // 关系强度
+    lastInteraction: DateTime
+}]
+
+// 主要查询模式
+MATCH (u:User)-[r:FRIEND*1..3]-(f:User)
+WHERE u.userId = $userId
+RETURN f, length(r) as distance, count(*) as count
+
+// 社交圈子查询
+MATCH (u:User)-[r:FRIEND]-(f:User)
+WHERE u.userId = $userId
+WITH f, r.strength as strength
+RETURN CASE 
+    WHEN strength > 0.7 THEN 'close'
+    ELSE 'distant'
+END as type, collect(f) as members
 ```

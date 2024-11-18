@@ -160,27 +160,72 @@ async function handleFriendRequest(userId, friendId, action) {
 
 ## 3.3 社交分析系统 ✅
 
-### 3.3.1 社交圈子分析
-```javascript
-// 社交圈子分析逻辑
-async function analyzeSocialCircles(userId) {
-    const circles = await neo4jService.getSocialCircles(userId);
-    return {
-        close: circles.filter(c => c.type === 'close'),
-        distant: circles.filter(c => c.type === 'distant')
-    };
-}
-```
-
-### 3.3.2 影响力分析
+### 3.3.1 社交影响力分析
 ```javascript
 // 社交影响力分析逻辑
 async function analyzeSocialInfluence(userId) {
-    const influence = await neo4jService.getSocialInfluence(userId);
-    return {
-        totalReach: influence.totalReach,
-        distribution: influence.distribution
-    };
+    try {
+        // 尝试从缓存获取
+        const cachedData = await redisClient.getSocialInfluence(userId);
+        if (cachedData) {
+            return cachedData;
+        }
+
+        // 从 Neo4j 获取分析数据
+        const influenceData = await neo4jService.analyzeSocialInfluence(userId);
+        
+        // 缓存结果
+        await redisClient.setSocialInfluence(userId, influenceData);
+        
+        return {
+            totalReach: influenceData.totalReach,
+            distribution: influenceData.distribution.map(item => ({
+                level: item.level,
+                count: item.count
+            }))
+        };
+    } catch (error) {
+        console.error('社交影响力分析失败:', error);
+        return {
+            totalReach: 0,
+            distribution: [
+                { level: 1, count: 0 },
+                { level: 2, count: 0 },
+                { level: 3, count: 0 }
+            ]
+        };
+    }
+}
+```
+
+### 3.3.2 社交圈子分析
+```javascript
+// 社交圈子分析逻辑
+async function analyzeSocialCircles(userId) {
+    try {
+        // 尝试从缓存获取
+        const cachedData = await redisClient.getSocialCircles(userId);
+        if (cachedData) {
+            return cachedData;
+        }
+
+        // 从 Neo4j 获取圈子数据
+        const circles = await neo4jService.getSocialCircles(userId);
+        
+        // 缓存结果
+        await redisClient.setSocialCircles(userId, circles);
+        
+        return {
+            close: circles.filter(c => c.type === 'close'),
+            distant: circles.filter(c => c.type === 'distant')
+        };
+    } catch (error) {
+        console.error('社交圈子分析失败:', error);
+        return {
+            close: [],
+            distant: []
+        };
+    }
 }
 ```
 

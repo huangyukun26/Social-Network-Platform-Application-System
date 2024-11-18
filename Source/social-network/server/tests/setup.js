@@ -4,6 +4,30 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const RedisClient = require('../utils/RedisClient');
 
+// 修改 Neo4j mock
+jest.mock('../services/neo4jService', () => {
+    return {
+        __esModule: true,
+        default: {
+            syncUserToNeo4j: jest.fn().mockResolvedValue(true),
+            testConnection: jest.fn().mockResolvedValue(true),
+            initialize: jest.fn().mockResolvedValue(true),
+            shutdown: jest.fn().mockResolvedValue(true)
+        }
+    };
+});
+
+// 添加 User model 的 mock 中间件
+jest.mock('../models/User', () => {
+    const originalModule = jest.requireActual('../models/User');
+    const schema = originalModule.schema;
+    
+    // 移除 Neo4j 相关的中间件
+    schema.post('save', function() {});
+    
+    return originalModule;
+});
+
 let mongoServer;
 
 // 在所有测试开始前执行
@@ -48,6 +72,8 @@ beforeAll(async () => {
 // 每个测试前执行
 beforeEach(async () => {
     await RedisClient.client.flushall();
+    // 重置所有 mock
+    jest.clearAllMocks();
 });
 
 // 所有测试结束后执行

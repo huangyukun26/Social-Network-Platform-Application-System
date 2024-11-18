@@ -2,11 +2,15 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const http = require('http');
 require('dotenv').config();
 const fs = require('fs');
 const RedisClient = require('./utils/RedisClient');
+const SocketManager = require('./utils/socketManager');
+const KafkaService = require('./services/KafkaService');
 
 const app = express();
+const server = http.createServer(app);
 
 // 中间件
 app.use(cors({
@@ -43,24 +47,30 @@ app.use((req, res, next) => {
     next();
 });
 
-// 连接MongoDB据库
-mongoose.connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-})
-.then(() => {
-    console.log('MongoDB连接成功');
-    console.log('数据库URI:', process.env.MONGODB_URI);
-    RedisClient.client.ping().then(() => {
+// 初始化服务
+async function initializeServices() {
+    try {
+        // MongoDB 连接
+        await mongoose.connect(process.env.MONGODB_URI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true
+        });
+        console.log('MongoDB连接成功');
+        console.log('数据库URI:', process.env.MONGODB_URI);
+
+        // Redis 连接
+        await RedisClient.client.ping();
         console.log('Redis连接成功');
-    }).catch(err => {
-        console.error('Redis连接失败:', err);
-    });
-})
-.catch(err => {
-    console.error('MongoDB连接失败:', err);
-    process.exit(1);
-});
+
+        // Kafka 连接
+        await KafkaService.initialize();
+        console.log('Kafka连接成功');
+
+    } catch (error) {
+        console.error('服务初始化失败:', error);
+        process.exit(1);
+    }
+}
 
 // 导入路由
 const userRoutes = require('./routes/users');
@@ -69,6 +79,7 @@ const friendRoutes = require('./routes/friends');
 const followRoutes = require('./routes/followRoutes');
 const adminRoutes = require('./routes/admin');
 const cacheMonitorRoutes = require('./routes/admin/cache-monitor');
+const messageRoutes = require('./routes/messageRoutes');
 
 // 注册路由
 app.use('/api/users', userRoutes);
@@ -77,6 +88,7 @@ app.use('/api/friends', friendRoutes);
 app.use('/api/follow', followRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cache', cacheMonitorRoutes);
+app.use('/api/messages', messageRoutes);
 
 // 基础路由
 app.get('/', (req, res) => {
@@ -113,17 +125,62 @@ app.use((err, req, res, next) => {
 // 修改服务器启动部分
 if (process.env.NODE_ENV !== 'test') {
     const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => {
-        console.log(`服务器运行在端口 ${PORT}`);
-        console.log('可用路由:');
-        console.log('- GET  /api/users/me');
-        console.log('- POST /api/users/login');
-        console.log('- POST /api/users/register');
-        console.log('- GET  /api/posts/user/:userId');
-        console.log('- POST /api/follow/:userId');
-        console.log('- GET  /api/follow/:userId/followers');
-        console.log('- GET  /api/follow/:userId/following');
+    
+    // 初始化所有服务
+    initializeServices().then(() => {
+        // 初始化 Socket.IO
+        SocketManager.initialize(server);
+        
+        // 启动服务器
+        server.listen(PORT, () => {
+            console.log(`服务器运行在端口 ${PORT}`);
+            console.log('可用路由:');
+            console.log('- GET  /api/users/me');
+            console.log('- POST /api/users/login');
+            console.log('- POST /api/users/register');
+            console.log('- GET  /api/posts/user/:userId');
+            console.log('- POST /api/follow/:userId');
+            console.log('- GET  /api/follow/:userId/followers');
+            console.log('- GET  /api/follow/:userId/following');
+            console.log('消息系统路由:');
+            console.log('- POST /api/messages/send');
+            console.log('- GET  /api/messages/history/:userId');
+            console.log('- PUT  /api/messages/read/:senderId');
+            console.log('- GET  /api/messages/unread');
+        });
     });
+
+    // 优雅关闭
+    const gracefulShutdown = async () => {
+        console.log('正在关闭服务器...');
+        
+        // 关闭 HTTP 服务器
+        server.close(async () => {
+            try {
+                // 关闭 Kafka 连接
+                await KafkaService.shutdown();
+                console.log('Kafka 连接已关闭');
+
+                // 关闭 Redis 连接
+                await RedisClient.client.quit();
+                console.log('Redis 连接已关闭');
+
+                // 关闭 MongoDB 连接
+                await mongoose.connection.close();
+                console.log('MongoDB 连接已关闭');
+
+                console.log('服务器已安全关闭');
+                process.exit(0);
+            } catch (error) {
+                console.error('关闭服务器时出错:', error);
+                process.exit(1);
+            }
+        });
+    };
+
+    // 监听进程信号
+    process.on('SIGTERM', gracefulShutdown);
+    process.on('SIGINT', gracefulShutdown);
 }
 
-module.exports = app; 
+module.exports = { app, server }; 

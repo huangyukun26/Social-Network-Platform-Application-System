@@ -252,7 +252,26 @@ Authorization: Bearer <token>
 
 ### 4.3 获取社交分析数据
 ```javascript
-GET /api/friends/analysis
+GET /api/friends/influence-analysis
+
+请求头:
+Authorization: Bearer <token>
+
+响应:
+{
+    "totalReach": number,           // 总影响范围
+    "distribution": [               // 影响力分布
+        {
+            "level": number,        // 社交距离层级
+            "count": number         // 用户数量
+        }
+    ]
+}
+```
+
+### 4.4 获取社交圈子分析
+```javascript 
+GET /api/friends/analysis/circles
 
 请求头:
 Authorization: Bearer <token>
@@ -270,16 +289,7 @@ Authorization: Bearer <token>
             "members": [User],
             "size": number
         }
-    ],
-    "influence": {
-        "totalReach": number,           // 总影响范围
-        "distribution": [               // 影响力分布
-            {
-                "distance": number,     // 社交距离
-                "count": number        // 用户数量
-            }
-        ]
-    }
+    ]
 }
 ```
 

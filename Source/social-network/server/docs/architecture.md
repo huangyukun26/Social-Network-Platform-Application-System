@@ -127,6 +127,25 @@ erDiagram
     User }|--|| Privacy : has
 ```
 
+### 4.4 社交网络分析
+```mermaid
+graph TD
+    User[用户] --> |分析| Influence[影响力分析]
+    User --> |分析| Circles[社交圈子]
+    
+    Influence --> |计算| TotalReach[总影响范围]
+    Influence --> |计算| Distribution[影响力分布]
+    
+    Circles --> |识别| CloseCircle[亲密圈子]
+    Circles --> |识别| DistantCircle[普通圈子]
+    
+    subgraph Neo4j
+        FriendRelation[好友关系]
+        PathAnalysis[路径分析]
+        CircleDetection[圈子检测]
+    end
+```
+
 ## 5. 安全架构
 
 ### 5.1 认证流程

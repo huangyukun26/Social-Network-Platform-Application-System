@@ -16,7 +16,9 @@
     "sync:data": "node scripts/data-sync/syncData.js",
     "sync:validate": "node scripts/data-sync/validateData.js",
     "test:neo4j": "cross-env NODE_ENV=test jest tests/neo4j --detectOpenHandles --forceExit --verbose",
-    "seed": "node server/scripts/seedData.js"
+    "seed": "node server/scripts/seedData.js",
+    "test:message": "cross-env NODE_ENV=test SKIP_NEO4J=true jest tests/message --detectOpenHandles --forceExit --verbose",
+    "test:message:watch": "cross-env NODE_ENV=test SKIP_NEO4J=true jest tests/message --watch --detectOpenHandles --verbose"
   },
   "keywords": [],
   "author": "",
@@ -28,9 +30,11 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
+    "kafkajs": "^2.2.4",
     "mongoose": "^8.8.1",
     "multer": "^1.4.5-lts.1",
-    "neo4j-driver": "^4.4.0"
+    "neo4j-driver": "^4.4.0",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
