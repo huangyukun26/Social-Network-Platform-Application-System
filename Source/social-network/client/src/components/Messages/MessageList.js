@@ -40,6 +40,19 @@ const MessageList = forwardRef(({ onSelect, selectedId, friends }, ref) => {
     const [loading, setLoading] = useState(false);
     const currentUserId = JSON.parse(sessionStorage.getItem('user'))?._id;
 
+    // 添加处理头像URL的辅助函数
+    const getAvatarUrl = (avatarPath) => {
+        if (!avatarPath) return ''; // 返回空字符串或默认头像路径
+        
+        // 如果已经是完整URL则直接返回
+        if (avatarPath.startsWith('http')) {
+            return avatarPath;
+        }
+        
+        // 否则拼接服务器地址
+        return `http://localhost:5000${avatarPath}`;
+    };
+
     const fetchChats = useCallback(async () => {
         if (!currentUserId) return;
         
@@ -54,37 +67,33 @@ const MessageList = forwardRef(({ onSelect, selectedId, friends }, ref) => {
             const chatData = Array.isArray(response.data) ? response.data : [];
             console.log('获取到的聊天数据:', chatData);
             
-            // 只处理有效的聊天数据
+            // 处理聊天数据
             const formattedChats = chatData
-                .filter(chat => {
-                    // 过滤掉无效的聊天记录
-                    return chat.sender && chat.receiver;
-                })
+                .filter(chat => chat.sender && chat.receiver)
                 .map(chat => {
-                    // 确定对话方信息
                     const isReceiver = chat.receiver._id === currentUserId;
                     const otherUser = isReceiver ? chat.sender : chat.receiver;
                     
                     return {
                         _id: chat._id,
                         username: otherUser.username,
-                        avatar: otherUser.avatar,
+                        avatar: getAvatarUrl(otherUser.avatar), // 处理头像URL
                         lastMessage: chat.lastMessage || '',
-                        unreadCount: isReceiver ? (chat.unreadCount || 0) : 0, // 只有作为接收者时才显示未读数
+                        unreadCount: isReceiver ? (chat.unreadCount || 0) : 0,
                         updatedAt: chat.updatedAt,
                         userId: otherUser._id
                     };
                 })
                 .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 
-            // 添加没有聊天记录的好友
+            // 处理没有聊天记录的好友
             const chatUserIds = formattedChats.map(chat => chat.userId);
             const friendsWithoutChats = friends
                 .filter(friend => !chatUserIds.includes(friend._id))
                 .map(friend => ({
                     _id: friend._id,
                     username: friend.username,
-                    avatar: friend.avatar,
+                    avatar: getAvatarUrl(friend.avatar), // 处理头像URL
                     lastMessage: '',
                     unreadCount: 0,
                     updatedAt: new Date(0),
@@ -121,7 +130,11 @@ const MessageList = forwardRef(({ onSelect, selectedId, friends }, ref) => {
                     >
                         <div style={{ display: 'flex', alignItems: 'center' }}>
                             <Badge count={chat.unreadCount} size="small" offset={[-5, 5]}>
-                                <Avatar src={chat.avatar} />
+                                <Avatar 
+                                    src={chat.avatar} 
+                                    // 默认头像
+                                    icon={!chat.avatar && ""}
+                                />
                             </Badge>
                             <div style={{ marginLeft: 12, flex: 1 }}>
                                 <div style={{ 

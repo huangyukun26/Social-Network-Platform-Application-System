@@ -59,6 +59,16 @@ const MessageContent = styled.div`
     max-width: 70%;
 `;
 
+const getAvatarUrl = (avatarPath) => {
+    if (!avatarPath) return '';
+    
+    if (avatarPath.startsWith('http')) {
+        return avatarPath;
+    }
+    
+    return `http://localhost:5000${avatarPath}`;
+};
+
 const ChatWindow = ({ friend, onMessageSent }) => {
     const [message, setMessage] = useState('');
     const [messages, setMessages] = useState([]);
@@ -74,6 +84,18 @@ const ChatWindow = ({ friend, onMessageSent }) => {
         } catch (error) {
             console.error('解析用户信息失败:', error);
             return null;
+        }
+    }, []);
+
+    const currentUserAvatar = useMemo(() => {
+        const userStr = sessionStorage.getItem('user');
+        if (!userStr) return '';
+        try {
+            const user = JSON.parse(userStr);
+            return getAvatarUrl(user.avatar);
+        } catch (error) {
+            console.error('解析用户头像失败:', error);
+            return '';
         }
     }, []);
 
@@ -259,7 +281,8 @@ const ChatWindow = ({ friend, onMessageSent }) => {
                     <AvatarWrapper>
                         <Avatar 
                             size={32} 
-                            src={isOwn ? sessionStorage.getItem('userAvatar') : friend?.avatar}
+                            src={isOwn ? currentUserAvatar : getAvatarUrl(friend?.avatar)}
+                            icon={!isOwn && !friend?.avatar ? "user" : null}
                         />
                     </AvatarWrapper>
                     <MessageContent isMine={isOwn}>
@@ -297,7 +320,10 @@ const ChatWindow = ({ friend, onMessageSent }) => {
     return (
         <WindowContainer>
             <ChatHeader>
-                <Avatar src={friend.avatar} />
+                <Avatar 
+                    src={getAvatarUrl(friend.avatar)} 
+                    icon={!friend.avatar && "user"}
+                />
                 <span className="name">{friend.username}</span>
             </ChatHeader>
             
