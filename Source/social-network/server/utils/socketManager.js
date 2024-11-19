@@ -21,23 +21,25 @@ class SocketManager {
         this.io.use(async (socket, next) => {
             try {
                 const token = socket.handshake.auth.token;
+                console.log('Socket 认证, token:', token ? '存在' : '不存在');
+                
                 if (!token) {
-                    return next(new Error('认证失败'));
+                    return next(new Error('认证失败: 缺少token'));
                 }
 
                 const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 socket.userId = decoded.userId;
                 
+                console.log('Socket 用户认证成功:', socket.userId);
+                
                 // 更新用户在线状态
                 await redisClient.hset('online_users', decoded.userId, socket.id);
                 this.userSockets.set(decoded.userId, socket);
                 
-                // 通知好友上线
-                await this.updateUserStatus(decoded.userId, true);
-                
                 next();
             } catch (error) {
-                next(new Error('认证失败'));
+                console.error('Socket 认证失败:', error);
+                next(new Error('认证失败: ' + error.message));
             }
         });
 
@@ -66,13 +68,14 @@ class SocketManager {
 
             const socketId = await redisClient.hget('online_users', userId);
             
-            // 无论用户是否在线都返回成功，因为消息已经保存到数据库
+            // 添加数据格式日志
+            console.log(`发送${event}事件，数据:`, data);
+            
             if (socketId) {
                 console.log(`用户 ${userId} 在线，立即发送消息`);
                 this.io.to(socketId).emit(event, data);
             } else {
                 console.log(`用户 ${userId} 不在线，消息已存储到数据库`);
-                // 消息已经保存在数据库中，用户上线后可以通过获取历史消息看到
             }
 
             return true;

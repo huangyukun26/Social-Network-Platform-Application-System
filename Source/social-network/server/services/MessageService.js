@@ -70,7 +70,7 @@ class MessageService {
             
             // 创建消息
             const message = await Message.create({
-                chatId: chat._id,  // 确保设置 chatId
+                chatId: chat._id,
                 sender: senderId,
                 receiver: receiverId,
                 content,
@@ -86,8 +86,11 @@ class MessageService {
                 .populate('chatId')
                 .lean();
 
-            // 更新聊天的最后一条消息
+            // 更新聊天的最后一条消息和未读计数
             chat.lastMessage = message._id;
+            // 增加接收者的未读计数
+            const currentUnread = chat.unreadCount.get(receiverId.toString()) || 0;
+            chat.unreadCount.set(receiverId.toString(), currentUnread + 1);
             await chat.save();
 
             // 实时通知
@@ -134,37 +137,54 @@ class MessageService {
     // 标记消息为已读
     async markAsRead(userId, chatId) {
         try {
-            const chat = await Chat.findById(chatId);
-            if (!chat) throw new Error('聊天不存在');
-
-            // 更新消息状态
-            const messages = await Message.find({
-                chatId,
-                receiver: userId,
-                'readBy.user': { $ne: userId }
-            });
-
-            for (const message of messages) {
-                message.readBy.push({
-                    user: userId,
-                    readAt: new Date()
-                });
-                await message.save();
-
-                // 通知发送者消息已读
-                if (this.socketManager) {
-                    await this.socketManager.sendToUser(message.sender, 'message_read', {
-                        messageId: message._id,
-                        chatId,
-                        readBy: userId
-                    });
-                }
+            console.log('开始标记消息已读:', { userId, chatId });
+            
+            // 参数验证
+            if (!userId || !chatId) {
+                console.error('标记已读缺少参数:', { userId, chatId });
+                throw new Error('缺少必要参数');
             }
 
-            // 重置未读计数
-            chat.unreadCount.set(userId.toString(), 0);
-            await chat.save();
+            // 确保是字符串类型的 ID
+            const userIdStr = userId.toString();
+            const chatIdStr = chatId.toString();
 
+            const chat = await Chat.findById(chatIdStr);
+            if (!chat) {
+                console.error('聊天不存在:', chatIdStr);
+                throw new Error('聊天不存在');
+            }
+
+            // 验证用户是否是聊天参与者
+            if (!chat.participants.includes(userIdStr)) {
+                throw new Error('用户不是聊天参与者');
+            }
+
+            // 更新未读计数
+            if (chat.unreadCount && chat.unreadCount.has(userIdStr)) {
+                chat.unreadCount.set(userIdStr, 0);
+                await chat.save();
+            }
+
+            // 更新消息状态
+            await Message.updateMany(
+                {
+                    chatId: chatIdStr,
+                    receiver: userIdStr,
+                    'readBy.user': { $ne: userIdStr }
+                },
+                {
+                    $push: {
+                        readBy: {
+                            user: userIdStr,
+                            readAt: new Date()
+                        }
+                    }
+                }
+            );
+
+            console.log('消息已标记为已读');
+            return true;
         } catch (error) {
             console.error('标记消息已读失败:', error);
             throw error;
@@ -201,7 +221,7 @@ class MessageService {
                 throw new Error('无权编辑此消息');
             }
 
-            // 保存编辑历史
+            // 保编辑历史
             message.editHistory.push({
                 content: message.content,
                 editedAt: new Date()
@@ -443,7 +463,7 @@ class MessageService {
         }
     }
 
-    // 获取未读消息统计
+    // 获取未消息统计
     async getUnreadStats(userId) {
         try {
             const chats = await Chat.find({
@@ -497,34 +517,43 @@ class MessageService {
     // 获取最近聊天列表
     async getRecentChats(userId) {
         try {
+            console.log('开始获取最近聊天列表, userId:', userId);
+            
             const chats = await Chat.find({
-                participants: userId
+                participants: userId,
             })
             .populate('participants', 'username avatar')
             .populate({
                 path: 'lastMessage',
-                populate: {
-                    path: 'sender',
-                    select: 'username avatar'
-                }
+                populate: [
+                    { path: 'sender', select: 'username avatar' },
+                    { path: 'receiver', select: 'username avatar' }
+                ]
             })
-            .sort({ updatedAt: -1 })
-            .lean();
+            .sort({ updatedAt: -1 });
 
-            return chats.map(chat => {
+            console.log('数据库查询结果:', chats);
+
+            // 格式化返回数据
+            const formattedChats = chats.map(chat => {
                 const otherParticipant = chat.participants.find(
                     p => p._id.toString() !== userId.toString()
                 );
                 
                 return {
                     _id: chat._id,
-                    username: otherParticipant?.username,
+                    username: otherParticipant?.username || '未知用户',
                     avatar: otherParticipant?.avatar,
-                    lastMessage: chat.lastMessage?.content,
-                    unreadCount: chat.unreadCount.get(userId.toString()) || 0,
-                    updatedAt: chat.updatedAt
+                    lastMessage: chat.lastMessage?.content || '暂无消息',
+                    unreadCount: chat.unreadCount?.get(userId.toString()) || 0,
+                    updatedAt: chat.updatedAt,
+                    // 添加发送者和接收者信息
+                    sender: chat.lastMessage?.sender || null,
+                    receiver: chat.lastMessage?.receiver || null
                 };
             });
+
+            return formattedChats;
         } catch (error) {
             console.error('获取最近聊天列表失败:', error);
             throw error;

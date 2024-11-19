@@ -6,10 +6,22 @@ const KafkaService = require('../services/kafkaService');
 
 router.use(authMiddleware);
 
+// 添加调试中间件
+router.use((req, res, next) => {
+    console.log('收到消息路由请求:', {
+        method: req.method,
+        path: req.path,
+        userId: req.userId,
+        query: req.query,
+        body: req.body
+    });
+    next();
+});
+
 // 基础消息路由
 router.post('/send', messageController.sendMessage);
 router.get('/history/:userId', messageController.getChatHistory);
-router.put('/read/:senderId', messageController.markAsRead);
+router.put('/read/:messageId', messageController.markMessageRead);
 router.get('/unread', messageController.getUnreadCount);
 router.get('/recent', messageController.getRecentChats);
 router.get('/search', messageController.searchMessages);
@@ -89,5 +101,8 @@ router.get('/kafka-status', async (req, res) => {
         });
     }
 });
+
+// 添加新的路由
+router.put('/chat/:chatId/read', messageController.markChatMessagesRead);
 
 module.exports = router;

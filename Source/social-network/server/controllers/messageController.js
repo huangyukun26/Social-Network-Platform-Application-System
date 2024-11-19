@@ -86,11 +86,36 @@ const messageController = {
     // 标记消息已读
     async markAsRead(req, res) {
         try {
-            const { senderId } = req.params;
-            await MessageService.markAsRead(req.user._id, senderId);
-            res.json({ message: '消息已标记为已读' });
+            const { userId, senderId } = req.params;
+            
+            if (!userId || !senderId) {
+                return res.status(400).json({
+                    success: false,
+                    message: '缺少必要参数'
+                });
+            }
+
+            await MessageService.markAsRead(userId, senderId);
+            
+            // 发送已读状态更新通知
+            if (MessageService.socketManager) {
+                await MessageService.socketManager.sendToUser(senderId, 'messages_read', {
+                    by: userId,
+                    timestamp: new Date()
+                });
+            }
+            
+            res.json({ 
+                success: true,
+                message: '消息已标记为已读' 
+            });
         } catch (error) {
-            res.status(500).json({ message: '标记消息已读失败' });
+            console.error('标记消息已读失败:', error);
+            res.status(500).json({ 
+                success: false,
+                message: '标记消息已读失败',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
         }
     },
 
@@ -111,13 +136,27 @@ const messageController = {
     // 获取最近的聊天列表
     async getRecentChats(req, res) {
         try {
-            const recentChats = await MessageService.getRecentChats(req.user._id);
-            res.json(recentChats);
+            console.log('收到获取最近聊天请求, userId:', req.userId);
+            
+            // 验证用户ID
+            if (!req.userId) {
+                console.error('用户ID不存在');
+                return res.status(401).json({ 
+                    success: false, 
+                    message: '未授权访问' 
+                });
+            }
+
+            const chats = await MessageService.getRecentChats(req.userId);
+            console.log('返回聊天列表:', chats);
+
+            res.json(chats);
         } catch (error) {
             console.error('获取最近聊天列表失败:', error);
             res.status(500).json({ 
                 success: false, 
-                message: '获取最近聊天列表失败' 
+                message: '获取聊天列表失败',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         }
     },
@@ -227,10 +266,51 @@ const messageController = {
     async markMessageRead(req, res) {
         try {
             const { messageId } = req.params;
-            await MessageService.markMessageRead(messageId, req.user._id);
-            res.json({ message: '消息已标记为已读' });
+            const userId = req.user._id;
+            
+            console.log('收到标记已读请求:', {
+                messageId,
+                userId
+            });
+
+            // 验证 messageId 格式
+            if (!ObjectId.isValid(messageId)) {
+                return res.status(400).json({
+                    success: false,
+                    message: '无效的消息ID格式'
+                });
+            }
+            
+            // 先获取消息以获取 chatId
+            const message = await Message.findById(messageId);
+            if (!message) {
+                return res.status(404).json({ 
+                    success: false, 
+                    message: '消息不存在' 
+                });
+            }
+
+            // 验证用户是否有权限标记这条消息
+            if (message.receiver.toString() !== userId.toString()) {
+                return res.status(403).json({
+                    success: false,
+                    message: '无权操作此消息'
+                });
+            }
+
+            await MessageService.markAsRead(userId, message.chatId);
+            
+            res.json({ 
+                success: true,
+                message: '消息已标记为已读' 
+            });
         } catch (error) {
-            res.status(500).json({ message: '标记消息已读失败' });
+            console.error('标记消息已读失败:', error);
+            res.status(500).json({ 
+                success: false,
+                message: '标记消息已读失败',
+                details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
         }
     },
 
@@ -241,6 +321,48 @@ const messageController = {
             res.json({ message: '已发送输入状态' });
         } catch (error) {
             res.status(500).json({ message: '发送输入状态失败' });
+        }
+    },
+
+    // 添加新的控制器方法
+    async markChatMessagesRead(req, res) {
+        try {
+            const { chatId } = req.params;
+            const userId = req.userId;
+            
+            console.log('收到标记聊天已读请求:', {
+                chatId,
+                userId
+            });
+
+            // 验证参数
+            if (!chatId || !userId) {
+                return res.status(400).json({
+                    success: false,
+                    message: '缺少必要参数'
+                });
+            }
+
+            // 验证 chatId 格式
+            if (!ObjectId.isValid(chatId)) {
+                return res.status(400).json({
+                    success: false,
+                    message: '无效的聊天ID格式'
+                });
+            }
+
+            await MessageService.markAsRead(userId, chatId);
+            
+            res.json({ 
+                success: true,
+                message: '消息已标记为已读' 
+            });
+        } catch (error) {
+            console.error('标记聊天消息已读失败:', error);
+            res.status(500).json({ 
+                success: false,
+                message: error.message || '标记消息已读失败'
+            });
         }
     }
 };
