@@ -34,15 +34,23 @@ const EditProfile = ({ onSuccess }) => {
     useEffect(() => {
         const fetchProfileData = async () => {
             try {
-                const token = localStorage.getItem('token');
-                if (!token) {
+                const token = sessionStorage.getItem('token');
+                const sessionId = sessionStorage.getItem('sessionId');
+                
+                if (!token || !sessionId) {
                     navigate('/login');
                     return;
                 }
 
-                const response = await axios.get('http://localhost:5000/api/users/me', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                const response = await axios.get(
+                    'http://localhost:5000/api/users/me', 
+                    {
+                        headers: { 
+                            Authorization: `Bearer ${token}`,
+                            'Session-ID': sessionId
+                        }
+                    }
+                );
 
                 const userData = response.data;
                 setProfileData(userData);
@@ -62,6 +70,11 @@ const EditProfile = ({ onSuccess }) => {
                         allowTagging: userData.privacy?.allowTagging
                     }
                 });
+
+                // 如果有头像，设置头像预览
+                if (userData.avatar) {
+                    setImageUrl(`http://localhost:5000${userData.avatar}`);
+                }
             } catch (error) {
                 console.error('获取用户资料失败:', error);
                 message.error('获取用户资料失败');
@@ -123,7 +136,15 @@ const EditProfile = ({ onSuccess }) => {
             setLoading(true);
             message.loading('正在更新个人资料...', 0);
             
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
+            const sessionId = sessionStorage.getItem('sessionId');
+            
+            if (!token || !sessionId) {
+                message.error('登录已过期，请重新登录');
+                navigate('/login');
+                return;
+            }
+
             const formData = new FormData();
             
             // 添加基本信息
@@ -137,7 +158,7 @@ const EditProfile = ({ onSuccess }) => {
                 formData.append('avatar', avatarField.fileList[0].originFileObj);
             }
 
-            // 处理隐私设置 - 使用 JSON 字符串传递整个隐私对象
+            // 处理隐私设置
             const privacySettings = {
                 profileVisibility: values.privacy?.profileVisibility || 'public',
                 showEmail: values.privacy?.showEmail || false,
@@ -149,14 +170,13 @@ const EditProfile = ({ onSuccess }) => {
             
             formData.append('privacySettings', JSON.stringify(privacySettings));
 
-            console.log('提交的隐私设置:', privacySettings);
-
             const response = await axios.put(
                 'http://localhost:5000/api/users/profile',
                 formData,
                 {
                     headers: {
                         Authorization: `Bearer ${token}`,
+                        'Session-ID': sessionId,
                         'Content-Type': 'multipart/form-data'
                     }
                 }
@@ -164,11 +184,6 @@ const EditProfile = ({ onSuccess }) => {
 
             if (response.data) {
                 message.success('个人资料更新成功');
-                // 更新表单数据
-                form.setFieldsValue({
-                    ...response.data,
-                    privacy: response.data.privacy
-                });
                 if (onSuccess) {
                     onSuccess(response.data);
                 }
