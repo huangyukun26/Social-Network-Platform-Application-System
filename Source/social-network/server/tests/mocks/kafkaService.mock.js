@@ -1,33 +1,18 @@
 const mockKafkaService = {
+    producer: null,
+    consumer: null,
+    admin: null,
+
     initialize: jest.fn().mockResolvedValue(true),
     shutdown: jest.fn().mockResolvedValue(true),
+    
+    // 简化的 sendMessage 实现
     sendMessage: jest.fn().mockImplementation(async (message) => {
-        return {
-            success: true,
-            messageId: 'mock-' + Date.now(),
-            message
-        };
-    }),
-    sendNotification: jest.fn().mockResolvedValue(true),
-    createConsumer: jest.fn().mockResolvedValue(true),
-    setupConsumers: jest.fn().mockResolvedValue(true),
-    producer: {
-        connect: jest.fn().mockResolvedValue(true),
-        send: jest.fn().mockResolvedValue({
-            success: true,
-            timestamp: Date.now()
-        }),
-        disconnect: jest.fn().mockResolvedValue(true)
-    },
-    admin: {
-        connect: jest.fn().mockResolvedValue(true),
-        disconnect: jest.fn().mockResolvedValue(true),
-        createTopics: jest.fn().mockResolvedValue(true)
-    },
-    consumers: new Map(),
-    isInitialized: true
+        return { success: true };
+    })
 };
 
-jest.mock('../../services/KafkaService', () => mockKafkaService);
+// 确保在测试中使用 mock
+jest.mock('../../services/kafkaService', () => mockKafkaService);
 
 module.exports = mockKafkaService;

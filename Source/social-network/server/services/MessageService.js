@@ -1,36 +1,65 @@
 const Message = require('../models/Message');
 const Chat = require('../models/Chat');
 const RedisClient = require('../utils/RedisClient');
-const SocketManager = require('../utils/socketManager');
-const User = require('../models/User');
-const mongoose = require('mongoose');
-const KafkaService = require('./KafkaService');
+const { Types: { ObjectId } } = require('mongoose');
+const KafkaService = require('./kafkaService');
+
+class MessageError extends Error {
+    constructor(code, message) {
+        super(message);
+        this.code = code;
+    }
+}
 
 class MessageService {
+    constructor() {
+        this.socketManager = null;
+    }
+
+    // 添加设置 socketManager 的方法
+    setSocketManager(manager) {
+        this.socketManager = manager;
+    }
+
     // 创建或获取聊天会话
     async getOrCreateChat(userId1, userId2) {
-        const participants = [userId1, userId2].sort();
-        
-        let chat = await Chat.findOne({
-            participants: { $all: participants },
-            type: 'private'
-        });
+        try {
+            // 参数验证
+            if (!userId1 || !userId2) {
+                throw new MessageError('INVALID_PARAMS', '用户ID不能为空');
+            }
 
-        if (!chat) {
-            chat = await Chat.create({
-                participants,
-                type: 'private',
-                unreadCount: new Map([[userId2.toString(), 0]])
+            // 确保是有效的 ObjectId
+            const id1 = typeof userId1 === 'string' ? new ObjectId(userId1) : userId1;
+            const id2 = typeof userId2 === 'string' ? new ObjectId(userId2) : userId2;
+            
+            let chat = await Chat.findOne({
+                participants: { 
+                    $all: [id1, id2],
+                    $size: 2
+                },
+                type: 'private'
             });
 
-            // 更新用户的活跃聊天列表
-            await User.updateMany(
-                { _id: { $in: participants } },
-                { $addToSet: { activeChats: chat._id } }
-            );
-        }
+            if (!chat) {
+                chat = await Chat.create({
+                    participants: [id1, id2],
+                    type: 'private',
+                    unreadCount: new Map([
+                        [id1.toString(), 0],
+                        [id2.toString(), 0]
+                    ])
+                });
+            }
 
-        return chat;
+            return chat;
+        } catch (error) {
+            console.error('获取或创建聊天失败:', error);
+            if (error instanceof MessageError) {
+                throw error;
+            }
+            throw new Error('获取或创建聊天失败');
+        }
     }
 
     // 发送消息
@@ -38,49 +67,42 @@ class MessageService {
         try {
             // 获取或创建聊天会话
             const chat = await this.getOrCreateChat(senderId, receiverId);
-
-            // 创建消息记录
+            
+            // 创建消息
             const message = await Message.create({
+                chatId: chat._id,  // 确保设置 chatId
                 sender: senderId,
                 receiver: receiverId,
-                chatId: chat._id,
                 content,
                 type,
                 attachments,
-                status: 'sent',
-                readBy: [{
-                    user: senderId,
-                    readAt: new Date()
-                }]
+                status: 'sent'
             });
 
-            // 更新聊天会话
+            // 填充消息详情
+            const populatedMessage = await Message.findById(message._id)
+                .populate('sender', 'username avatar')
+                .populate('receiver', 'username avatar')
+                .populate('chatId')
+                .lean();
+
+            // 更新聊天的最后一条消息
             chat.lastMessage = message._id;
-            chat.unreadCount.set(receiverId.toString(), 
-                (chat.unreadCount.get(receiverId.toString()) || 0) + 1
-            );
             await chat.save();
 
-            // 发送到Kafka
-            await KafkaService.sendMessage({
-                messageId: message._id,
-                chatId: chat._id,
-                sender: senderId,
-                receiver: receiverId,
-                content,
-                type,
-                timestamp: message.createdAt
-            });
-
-            // 缓存最新消息
-            await RedisClient.cacheRecentMessages(senderId, receiverId, message);
-
             // 实时通知
-            SocketManager.sendToUser(receiverId, 'new_message', {
-                message: await this.populateMessage(message)
-            });
+            if (this.socketManager) {
+                console.log('发送实时通知给接收者:', receiverId);
+                await this.socketManager.sendToUser(receiverId, 'new_message', {
+                    message: populatedMessage
+                });
+                // 同时发送给发送者
+                await this.socketManager.sendToUser(senderId, 'new_message', {
+                    message: populatedMessage
+                });
+            }
 
-            return message;
+            return populatedMessage;
         } catch (error) {
             console.error('发送消息失败:', error);
             throw error;
@@ -91,13 +113,14 @@ class MessageService {
     async getChatHistory(chatId, page = 1, limit = 20) {
         try {
             const messages = await Message.find({
-                chatId,
+                chatId: chatId,  // 使用正确的字段名
                 isDeleted: false
             })
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(limit)
             .populate('sender', 'username avatar')
+            .populate('receiver', 'username avatar')
             .populate('replyTo')
             .lean();
 
@@ -129,11 +152,13 @@ class MessageService {
                 await message.save();
 
                 // 通知发送者消息已读
-                SocketManager.sendToUser(message.sender, 'message_read', {
-                    messageId: message._id,
-                    chatId,
-                    readBy: userId
-                });
+                if (this.socketManager) {
+                    await this.socketManager.sendToUser(message.sender, 'message_read', {
+                        messageId: message._id,
+                        chatId,
+                        readBy: userId
+                    });
+                }
             }
 
             // 重置未读计数
@@ -191,11 +216,13 @@ class MessageService {
             chat.participants
                 .filter(p => p.toString() !== userId.toString())
                 .forEach(participantId => {
-                    SocketManager.sendToUser(participantId, 'message_edited', {
-                        messageId,
-                        chatId: message.chatId,
-                        newContent
-                    });
+                    if (this.socketManager) {
+                        this.socketManager.sendToUser(participantId, 'message_edited', {
+                            messageId,
+                            chatId: message.chatId,
+                            newContent
+                        });
+                    }
                 });
 
             return message;
@@ -209,7 +236,8 @@ class MessageService {
     async populateMessage(message) {
         return await Message.findById(message._id)
             .populate('sender', 'username avatar')
-            .populate('replyTo')
+            .populate('receiver', 'username avatar')
+            .populate('chatId')
             .lean();
     }
 
@@ -239,10 +267,12 @@ class MessageService {
             chat.participants
                 .filter(p => p.toString() !== userId.toString())
                 .forEach(participantId => {
-                    SocketManager.sendToUser(participantId, 'message_recalled', {
-                        messageId,
-                        chatId: message.chatId
-                    });
+                    if (this.socketManager) {
+                        this.socketManager.sendToUser(participantId, 'message_recalled', {
+                            messageId,
+                            chatId: message.chatId
+                        });
+                    }
                 });
 
             return message;
@@ -286,9 +316,11 @@ class MessageService {
                 await chat.save();
 
                 // 实时通知
-                SocketManager.sendToUser(toUserId, 'new_message', {
-                    message: await this.populateMessage(newMessage)
-                });
+                if (this.socketManager) {
+                    this.socketManager.sendToUser(toUserId, 'new_message', {
+                        message: await this.populateMessage(newMessage)
+                    });
+                }
 
                 forwardedMessages.push(newMessage);
             }
@@ -376,9 +408,11 @@ class MessageService {
 
             // 通知所有成员
             memberIds.forEach(memberId => {
-                SocketManager.sendToUser(memberId, 'group_chat_created', {
-                    chat: chat
-                });
+                if (this.socketManager) {
+                    this.socketManager.sendToUser(memberId, 'group_chat_created', {
+                        chat: chat
+                    });
+                }
             });
 
             return chat;
@@ -433,6 +467,104 @@ class MessageService {
             throw error;
         }
     }
+
+    // 获取未读消息数量
+    async getUnreadCount(userId) {
+        try {
+            const chats = await Chat.find({
+                participants: userId
+            });
+
+            let totalUnread = 0;
+            const unreadByChat = {};
+
+            chats.forEach(chat => {
+                const unreadCount = chat.unreadCount.get(userId.toString()) || 0;
+                totalUnread += unreadCount;
+                unreadByChat[chat._id] = unreadCount;
+            });
+
+            return {
+                total: totalUnread,
+                byChat: unreadByChat
+            };
+        } catch (error) {
+            console.error('获取未读消息数量失败:', error);
+            throw error;
+        }
+    }
+
+    // 获取最近聊天列表
+    async getRecentChats(userId) {
+        try {
+            const chats = await Chat.find({
+                participants: userId
+            })
+            .populate('participants', 'username avatar')
+            .populate({
+                path: 'lastMessage',
+                populate: {
+                    path: 'sender',
+                    select: 'username avatar'
+                }
+            })
+            .sort({ updatedAt: -1 })
+            .lean();
+
+            return chats.map(chat => {
+                const otherParticipant = chat.participants.find(
+                    p => p._id.toString() !== userId.toString()
+                );
+                
+                return {
+                    _id: chat._id,
+                    username: otherParticipant?.username,
+                    avatar: otherParticipant?.avatar,
+                    lastMessage: chat.lastMessage?.content,
+                    unreadCount: chat.unreadCount.get(userId.toString()) || 0,
+                    updatedAt: chat.updatedAt
+                };
+            });
+        } catch (error) {
+            console.error('获取最近聊天列表失败:', error);
+            throw error;
+        }
+    }
+
+    // 在 MessageService 类中添加 deliverMessage 方法
+    async deliverMessage(messageData) {
+        try {
+            const { messageId, chatId, sender, receiver, content, type, timestamp } = messageData;
+            
+            // 1. 更新消息状态
+            const message = await Message.findById(messageId);
+            if (!message) {
+                throw new Error('消息不存在');
+            }
+            
+            message.status = 'delivered';
+            await message.save();
+
+            // 2. 更新聊天会话
+            const chat = await Chat.findById(chatId);
+            if (chat) {
+                const currentUnread = chat.unreadCount.get(receiver.toString()) || 0;
+                chat.unreadCount.set(receiver.toString(), currentUnread + 1);
+                chat.lastMessage = messageId;
+                await chat.save();
+            }
+
+            // 3. 缓存消息
+            await RedisClient.cacheRecentMessages(sender, receiver, message);
+
+            // 4. 返回处理后的消息
+            return await this.populateMessage(message);
+        } catch (error) {
+            console.error('投递消息失败:', error);
+            throw error;
+        }
+    }
 }
 
-module.exports = new MessageService();
+const messageService = new MessageService();
+module.exports = messageService;

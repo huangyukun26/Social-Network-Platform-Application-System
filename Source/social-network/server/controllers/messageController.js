@@ -1,19 +1,44 @@
 const MessageService = require('../services/MessageService');
+const { ObjectId } = require('mongodb');
+const Message = require('../models/Message');
 
 const messageController = {
     // 发送消息
     async sendMessage(req, res) {
         try {
-            const { receiverId, content, type } = req.body;
+            const { receiverId, content, type = 'text' } = req.body;
+            if (!receiverId || !content) {
+                return res.status(400).json({ 
+                    success: false,
+                    message: '缺少必要参数'
+                });
+            }
+            
+            // 验证 receiverId 是否为有效的 ObjectId
+            if (!ObjectId.isValid(receiverId)) {
+                return res.status(400).json({
+                    success: false,
+                    message: '无效的接收者ID'
+                });
+            }
+            
             const message = await MessageService.sendMessage(
-                req.user._id,
+                req.userId,
                 receiverId,
                 content,
                 type
             );
-            res.json(message);
+            
+            res.json({
+                success: true,
+                data: message
+            });
         } catch (error) {
-            res.status(500).json({ message: '发送消息失败' });
+            console.error('发送消息失败:', error);
+            res.status(500).json({ 
+                success: false,
+                message: error.message || '发送消息失败'
+            });
         }
     },
 
@@ -22,14 +47,39 @@ const messageController = {
         try {
             const { userId } = req.params;
             const { page = 1 } = req.query;
-            const messages = await MessageService.getChatHistory(
-                req.user._id,
-                userId,
-                parseInt(page)
-            );
-            res.json(messages);
+            
+            if (!userId) {
+                return res.status(400).json({
+                    success: false,
+                    message: '缺少接收者ID'
+                });
+            }
+
+            // 使用 req.userId 替代 req.user._id
+            const chat = await MessageService.getOrCreateChat(req.userId, userId);
+            
+            // 获取消息历史
+            const messages = await Message.find({
+                chatId: chat._id,
+                isDeleted: false
+            })
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * 20)
+            .limit(20)
+            .populate('sender', 'username avatar')
+            .populate('receiver', 'username avatar')
+            .lean();
+
+            res.json({
+                success: true,
+                data: messages.reverse()
+            });
         } catch (error) {
-            res.status(500).json({ message: '获取聊天历史失败' });
+            console.error('获取聊天历史失败:', error);
+            res.status(500).json({ 
+                success: false, 
+                message: error.message || '获取聊天历史失败' 
+            });
         }
     },
 
@@ -47,20 +97,28 @@ const messageController = {
     // 获取未读消息数
     async getUnreadCount(req, res) {
         try {
-            const unreadCounts = await MessageService.getUnreadCount(req.user._id);
-            res.json(unreadCounts);
+            const unreadCount = await MessageService.getUnreadCount(req.user._id);
+            res.json(unreadCount);
         } catch (error) {
-            res.status(500).json({ message: '获取未读消息数失败' });
+            console.error('获取未读消息数量失败:', error);
+            res.status(500).json({ 
+                success: false, 
+                message: '获取未读消息数量失败' 
+            });
         }
     },
 
     // 获取最近的聊天列表
     async getRecentChats(req, res) {
         try {
-            const chats = await MessageService.getRecentChats(req.user._id);
-            res.json(chats);
+            const recentChats = await MessageService.getRecentChats(req.user._id);
+            res.json(recentChats);
         } catch (error) {
-            res.status(500).json({ message: '获取最近聊天列表失败' });
+            console.error('获取最近聊天列表失败:', error);
+            res.status(500).json({ 
+                success: false, 
+                message: '获取最近聊天列表失败' 
+            });
         }
     },
 

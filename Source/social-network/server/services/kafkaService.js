@@ -1,7 +1,5 @@
 const { Kafka, logLevel } = require('kafkajs');
 const config = require('../config/kafka.config');
-const MessageService = require('./MessageService');
-const SocketManager = require('../utils/socketManager');
 const RedisClient = require('../utils/RedisClient');
 
 class KafkaService {
@@ -19,6 +17,16 @@ class KafkaService {
         this.producer = this.kafka.producer();
         this.admin = this.kafka.admin();
         this.consumers = new Map();
+        this.socketManager = null;
+        this.messageService = null;
+    }
+
+    setMessageService(service) {
+        this.messageService = service;
+    }
+
+    setSocketManager(manager) {
+        this.socketManager = manager;
     }
 
     async initialize() {
@@ -67,13 +75,25 @@ class KafkaService {
 
     async setupConsumers() {
         try {
-            // 设置消息消费者
             await this.createConsumer(
                 config.topics.messages,
                 config.consumerGroups.messages,
-                async (message) => {
-                    await MessageService.deliverMessage(message);
-                    await SocketManager.sendToUser(message.receiver, 'new_message', message);
+                async (messageData) => {
+                    try {
+                        if (this.messageService) {
+                            const deliveredMessage = await this.messageService.deliverMessage(messageData);
+                            
+                            if (deliveredMessage && this.socketManager) {
+                                await this.socketManager.sendToUser(
+                                    messageData.receiver, 
+                                    'new_message', 
+                                    { message: deliveredMessage }
+                                );
+                            }
+                        }
+                    } catch (error) {
+                        console.error('消息处理失败:', error);
+                    }
                 }
             );
 
@@ -110,7 +130,7 @@ class KafkaService {
         }
     }
 
-    async sendMessage(message) {
+    async publishMessage(message) {
         try {
             await this.producer.send({
                 topic: config.topics.messages,
@@ -120,7 +140,7 @@ class KafkaService {
                 }]
             });
         } catch (error) {
-            console.error('Error sending message to Kafka:', error);
+            console.error('Error publishing message to Kafka:', error);
             throw error;
         }
     }
@@ -178,6 +198,29 @@ class KafkaService {
                 }
             }
         );
+    }
+
+    async sendMessageWithRetry(message, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                return await this.publishMessage(message);
+            } catch (error) {
+                if (i === retries - 1) throw error;
+                await new Promise(r => setTimeout(r, 1000 * Math.pow(2, i)));
+            }
+        }
+    }
+    
+    // 2. 添加批量处理
+    async sendBatchMessages(messages) {
+        const batch = messages.map(msg => ({
+            topic: config.topics.messages,
+            messages: [{ 
+                key: msg.receiver,
+                value: JSON.stringify(msg)
+            }]
+        }));
+        return await this.producer.sendBatch({ topicMessages: batch });
     }
 }
 

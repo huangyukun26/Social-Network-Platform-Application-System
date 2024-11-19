@@ -1,6 +1,8 @@
+const { describe, beforeAll, test, expect } = require('@jest/globals');
 const RedisClient = require('../../utils/RedisClient');
 const MessageService = require('../../services/MessageService');
 const User = require('../../models/User');
+const mongoose = require('mongoose');
 
 describe('消息缓存测试', () => {
     let receiverId;
@@ -17,6 +19,7 @@ describe('消息缓存测试', () => {
 
     test('消息缓存写入和读取', async () => {
         const message = {
+            _id: new mongoose.Types.ObjectId(),
             sender: global.testUser._id,
             receiver: receiverId,
             content: 'cache test message'
@@ -28,7 +31,7 @@ describe('消息缓存测试', () => {
         // 测试缓存读取
         const cachedMessage = await RedisClient.getCachedMessage(message._id);
         expect(cachedMessage).toBeDefined();
-        expect(cachedMessage.content).toBe(message.content);
+        expect(cachedMessage.content).toBe('cache test message');
     });
 
     test('未读消息计数', async () => {

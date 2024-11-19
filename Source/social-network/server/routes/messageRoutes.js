@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const messageController = require('../controllers/messageController');
 const authMiddleware = require('../middleware/auth');
-const KafkaService = require('../services/KafkaService');
+const KafkaService = require('../services/kafkaService');
 
 router.use(authMiddleware);
 

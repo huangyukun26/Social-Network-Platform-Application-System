@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const Neo4jService = require('../services/neo4jService').Neo4jService;
+let neo4jService;
 
 const userSchema = new mongoose.Schema({
     username: {
@@ -254,33 +256,46 @@ userSchema.set('toJSON', { virtuals: true });
 userSchema.set('toObject', { virtuals: true });
 
 userSchema.post('save', async function(doc) {
+    // 在测试环境中跳过实际的 Neo4j 操作
+    if (process.env.SKIP_NEO4J === 'true') {
+        return;
+    }
+
     try {
-        const Neo4jService = require('../services/neo4jService');
-        const neo4jService = new Neo4jService();
+        // 延迟初始化 neo4jService
+        if (!neo4jService) {
+            neo4jService = new Neo4jService();
+        }
         
         // 同步用户基本信息
         await neo4jService.syncUserToNeo4j(doc._id.toString(), {
             username: doc.username,
             interests: doc.interests,
-            activityScore: doc.activityMetrics.interactionFrequency
+            activityScore: doc.activityMetrics?.interactionFrequency || 0
         });
 
         // 同步社交关系
-        if (doc.friendships) {
+        if (doc.friendships && doc.friendships.length > 0) {
             for (const friendship of doc.friendships) {
-                await neo4jService.syncFriendshipToNeo4j(
-                    doc._id.toString(),
-                    friendship.friend.toString(),
-                    {
-                        status: friendship.status,
-                        interactionCount: friendship.interactionCount,
-                        lastInteraction: friendship.lastInteraction
-                    }
-                );
+                if (friendship.friend) {
+                    await neo4jService.syncFriendshipToNeo4j(
+                        doc._id.toString(),
+                        friendship.friend.toString(),
+                        {
+                            status: friendship.status,
+                            interactionCount: friendship.interactionCount,
+                            lastInteraction: friendship.lastInteraction
+                        }
+                    );
+                }
             }
         }
     } catch (error) {
         console.error('Neo4j 同步失败:', error);
+        // 在测试环境中，我们可能想要抛出错误
+        if (process.env.NODE_ENV === 'test') {
+            throw error;
+        }
     }
 });
 

@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Layout, Menu, Avatar, Popover } from 'antd';
 import { Link, useNavigate } from 'react-router-dom';
-import { HomeOutlined, UserOutlined, LogoutOutlined, BellOutlined, HeartOutlined, HeartFilled, TeamOutlined } from '@ant-design/icons';
+import { HomeOutlined, UserOutlined, LogoutOutlined, BellOutlined, HeartOutlined, HeartFilled, TeamOutlined, MessageOutlined } from '@ant-design/icons';
 import styled from 'styled-components';
 import { theme } from '../../styles/theme';
 import { Badge } from 'antd';
 import axios from 'axios';
 import { formatTime } from '../../utils/timeFormat';
 import { message } from 'antd';
+import MessagePanel from '../Messages/MessagePanel';
 
 const { Header } = Layout;
 
@@ -95,6 +96,8 @@ const Navbar = () => {
     const navigate = useNavigate();
     const [user, setUser] = useState(null);
     const [notifications, setNotifications] = useState([]);
+    const [unreadMessages, setUnreadMessages] = useState(0);
+    const [unreadCount, setUnreadCount] = useState(0);
 
     useEffect(() => {
         const token = sessionStorage.getItem('token');
@@ -132,13 +135,51 @@ const Navbar = () => {
         }
     };
 
+    const fetchUnreadMessages = async () => {
+        try {
+            const token = sessionStorage.getItem('token');
+            const response = await axios.get('http://localhost:5000/api/messages/unread', {
+                headers: { 
+                    Authorization: `Bearer ${token}`,
+                    'Session-ID': sessionStorage.getItem('sessionId')
+                }
+            });
+            setUnreadMessages(response.data.length);
+        } catch (error) {
+            console.error('获取未读消息失败:', error);
+        }
+    };
+
     useEffect(() => {
         if (user) {
             fetchNotifications();
+            fetchUnreadMessages();
             const interval = setInterval(fetchNotifications, 30000);
-            return () => clearInterval(interval);
+            const unreadInterval = setInterval(fetchUnreadMessages, 30000);
+            return () => {
+                clearInterval(interval);
+                clearInterval(unreadInterval);
+            };
         }
     }, [user]);
+
+    useEffect(() => {
+        const fetchUnreadCount = async () => {
+            try {
+                const token = sessionStorage.getItem('token');
+                const response = await axios.get('http://localhost:5000/api/messages/unread', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setUnreadCount(response.data.total);
+            } catch (error) {
+                console.error('获取未读消息数量失败:', error);
+            }
+        };
+
+        fetchUnreadCount();
+        const interval = setInterval(fetchUnreadCount, 30000);
+        return () => clearInterval(interval);
+    }, []);
 
     const handleProfileClick = (e) => {
         e.preventDefault();
@@ -218,6 +259,20 @@ const Navbar = () => {
                             >
                                 <Badge count={notifications.length}>
                                     {notifications.length > 0 ? <HeartFilled /> : <HeartOutlined />}
+                                </Badge>
+                            </Popover>
+                        </Menu.Item>
+                        <Menu.Item key="messages">
+                            <Popover
+                                content={<MessagePanel />}
+                                trigger="click"
+                                placement="bottomRight"
+                                overlayStyle={{
+                                    padding: 0
+                                }}
+                            >
+                                <Badge>
+                                    <MessageOutlined style={{ fontSize: '18px' }} />
                                 </Badge>
                             </Popover>
                         </Menu.Item>

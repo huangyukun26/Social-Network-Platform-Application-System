@@ -14,34 +14,23 @@ const mockRedisClient = {
         hincrby: jest.fn().mockResolvedValue(1),
         multi: jest.fn().mockReturnValue({
             exec: jest.fn().mockResolvedValue([])
-        }),
-        on: jest.fn(),
-        connect: jest.fn()
+        })
     },
     
     // 缓存相关方法
     cacheMessage: jest.fn().mockImplementation(async (messageId, message) => {
-        return true;
+        return message;
     }),
     
     getCachedMessage: jest.fn().mockImplementation(async (messageId) => {
-        return null;
+        return {
+            content: 'cache test message',
+            sender: 'testSender',
+            receiver: 'testReceiver'
+        };
     }),
     
-    // 未读消息计数相关方法
-    incrUnreadMessages: jest.fn().mockImplementation(async (userId, senderId) => {
-        return 1;
-    }),
-    
-    getUnreadMessagesCount: jest.fn().mockImplementation(async (userId) => {
-        return [];
-    }),
-    
-    clearUnreadMessages: jest.fn().mockImplementation(async (userId, senderId) => {
-        return true;
-    }),
-    
-    // 最近消息缓存相关方法
+    // 最近消息缓存
     cacheRecentMessages: jest.fn().mockImplementation(async (userId1, userId2, messages) => {
         return true;
     }),
@@ -50,34 +39,29 @@ const mockRedisClient = {
         return [];
     }),
     
-    // 在线状态相关方法
-    setUserOnline: jest.fn().mockImplementation(async (userId, socketId) => {
+    // 未读消息计数相关方法
+    incrUnreadMessages: jest.fn().mockImplementation(async (userId, senderId) => {
+        return 1;
+    }),
+    
+    getUnreadMessagesCount: jest.fn().mockImplementation(async (userId) => {
+        return [{
+            senderId: 'testSender',
+            count: 2
+        }];
+    }),
+    
+    clearUnreadMessages: jest.fn().mockImplementation(async (userId, senderId) => {
         return true;
-    }),
-    
-    setUserOffline: jest.fn().mockImplementation(async (userId) => {
-        return true;
-    }),
-    
-    getUserSocketId: jest.fn().mockImplementation(async (userId) => {
-        return null;
-    }),
-    
-    // 指标收集相关方法
-    startMetricsCollection: jest.fn(),
-    stopMetricsCollection: jest.fn(),
-    recordMetric: jest.fn(),
-    getMetrics: jest.fn().mockResolvedValue({
-        hits: 0,
-        misses: 0,
-        totalRequests: 0,
-        latency: []
-    }),
-    
-    // 关闭连接
-    gracefulShutdown: jest.fn().mockResolvedValue(true)
+    })
 };
 
-jest.mock('../../utils/RedisClient', () => mockRedisClient);
+// 添加静态方法到 mock 对象本身
+Object.assign(mockRedisClient, {
+    hget: mockRedisClient.client.hget,
+    hset: mockRedisClient.client.hset,
+    // 确保所有方法都被复制到顶层
+    ...mockRedisClient.client
+});
 
 module.exports = mockRedisClient;

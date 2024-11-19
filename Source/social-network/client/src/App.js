@@ -10,6 +10,7 @@ import EditProfile from './components/Profile/EditProfile';
 import Friends from './components/Friends/Friends';
 import AdminRoute from './components/Auth/AdminRoute';
 import AdminDashboard from './components/admin/AdminDashboard';
+import Messages from './pages/Messages';
 
 function App() {
   const isAuthenticated = () => {
@@ -81,6 +82,7 @@ function App() {
             </AppLayout>
           </PrivateRoute>
         } />
+        <Route path="/messages" element={<Messages />} />
       </Routes>
     </Router>
   );

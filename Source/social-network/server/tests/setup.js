@@ -2,87 +2,99 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const RedisClient = require('../utils/RedisClient');
-
-// 修改 Neo4j mock
-jest.mock('../services/neo4jService', () => {
-    return {
-        __esModule: true,
-        default: {
-            syncUserToNeo4j: jest.fn().mockResolvedValue(true),
-            testConnection: jest.fn().mockResolvedValue(true),
-            initialize: jest.fn().mockResolvedValue(true),
-            shutdown: jest.fn().mockResolvedValue(true)
-        }
-    };
-});
-
-// 添加 User model 的 mock 中间件
-jest.mock('../models/User', () => {
-    const originalModule = jest.requireActual('../models/User');
-    const schema = originalModule.schema;
-    
-    // 移除 Neo4j 相关的中间件
-    schema.post('save', function() {});
-    
-    return originalModule;
-});
+const mockNeo4jService = require('./mocks/neo4jService.mock');
+const mockKafkaService = require('./mocks/kafkaService.mock');
+const mockRedisClient = require('./mocks/redisClient.mock');
 
 let mongoServer;
 
-// 在所有测试开始前执行
+// 设置全局超时
+jest.setTimeout(30000);
+
+// Mock 相关服务
+jest.mock('../utils/RedisClient', () => mockRedisClient);
+jest.mock('../services/kafkaService', () => mockKafkaService);
+jest.mock('../models/User', () => {
+    const originalModule = jest.requireActual('../models/User');
+    const schema = originalModule.schema;
+    schema.post('save', function() {});
+    return originalModule;
+});
+
+// 在 mock 设置完成后再导入 RedisClient
+const RedisClient = require('../utils/RedisClient');
+
+// 使用 Jest 的全局钩子
 beforeAll(async () => {
-    // 断开现有连接
-    if (mongoose.connection.readyState !== 0) {
+    try {
+        // 断开现有连接
         await mongoose.disconnect();
-    }
-    
-    // 创建内存MongoDB实例
-    mongoServer = await MongoMemoryServer.create();
-    const mongoUri = mongoServer.getUri();
-    
-    // 连接到测试数据库
-    await mongoose.connect(mongoUri);
-    
-    // 创建测试用户
-    const testUser = await User.create({
-        username: 'testUser',
-        email: 'test@example.com',
-        password: '$2a$12$Yr9MVtsdQaUK/KH1QbrI.usBew46qAx9AbKgYyZTAJu6NqJ5muIm',
-        avatar: '',
-        bio: '',
-        website: '',
-        followers: [],
-        following: [],
-        privacy: {},
-        friends: [],
-        likesReceived: 0,
-        posts: []
-    });
+        
+        // 创建内存MongoDB实例
+        mongoServer = await MongoMemoryServer.create();
+        const mongoUri = mongoServer.getUri();
+        
+        // 连接到测试数据库
+        await mongoose.connect(mongoUri, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            connectTimeoutMS: 30000,
+            socketTimeoutMS: 30000
+        });
+        
+        // 创建测试用户
+        const testUser = await User.create({
+            username: 'testUser',
+            email: 'test@example.com',
+            password: 'password123'
+        });
 
-    // 设置全局变量
-    global.testUser = testUser;
-    global.testToken = jwt.sign(
-        { userId: testUser._id },
-        process.env.JWT_SECRET || 'test-secret-key',
-        { expiresIn: '1h' }
-    );
+        global.testUser = testUser;
+        global.testToken = jwt.sign(
+            { userId: testUser._id },
+            process.env.JWT_SECRET || 'test-secret-key',
+            { expiresIn: '1h' }
+        );
+        
+        // 设置 Neo4j mock
+        User.prototype.neo4jService = mockNeo4jService;
+        
+        // 初始化 Kafka mock
+        await mockKafkaService.initialize();
+    } catch (error) {
+        console.error('Setup failed:', error);
+        throw error;
+    }
 });
 
-// 每个测试前执行
 beforeEach(async () => {
-    await RedisClient.client.flushall();
-    // 重置所有 mock
-    jest.clearAllMocks();
+    try {
+        await mongoose.connection.dropDatabase();
+        await mockRedisClient.client.flushall();
+        jest.clearAllMocks();
+    } catch (error) {
+        console.error('BeforeEach failed:', error);
+        throw error;
+    }
 });
 
-// 所有测试结束后执行
 afterAll(async () => {
-    if (mongoose.connection.readyState !== 0) {
+    try {
         await mongoose.disconnect();
+        if (mongoServer) {
+            await mongoServer.stop();
+        }
+        
+        // 清理 Redis mock
+        mockRedisClient.client.flushall.mockClear();
+        mockRedisClient.client.quit.mockClear();
+        
+        await mockKafkaService.shutdown();
+        
+        // 等待所有连接关闭
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (error) {
+        console.error('Cleanup failed:', error);
+        throw error;
     }
-    if (mongoServer) {
-        await mongoServer.stop();
-    }
-    await RedisClient.client.quit();
 }); 

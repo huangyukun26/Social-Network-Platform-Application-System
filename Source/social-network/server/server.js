@@ -7,7 +7,7 @@ require('dotenv').config();
 const fs = require('fs');
 const RedisClient = require('./utils/RedisClient');
 const SocketManager = require('./utils/socketManager');
-const KafkaService = require('./services/KafkaService');
+const KafkaService = require('./services/kafkaService');
 
 const app = express();
 const server = http.createServer(app);
@@ -62,7 +62,17 @@ async function initializeServices() {
         await RedisClient.client.ping();
         console.log('Redis连接成功');
 
-        // Kafka 连接
+        // 初始化 Socket.IO
+        SocketManager.initialize(server);
+        console.log('Socket.IO 初始化成功');
+
+        // 设置服务之间的依赖关系
+        const MessageService = require('./services/MessageService');
+        MessageService.setSocketManager(SocketManager);
+        KafkaService.setSocketManager(SocketManager);
+        KafkaService.setMessageService(MessageService);
+        
+        // Kafka 连接 (放在最后，因为它依赖其他服务)
         await KafkaService.initialize();
         console.log('Kafka连接成功');
 
@@ -128,9 +138,6 @@ if (process.env.NODE_ENV !== 'test') {
     
     // 初始化所有服务
     initializeServices().then(() => {
-        // 初始化 Socket.IO
-        SocketManager.initialize(server);
-        
         // 启动服务器
         server.listen(PORT, () => {
             console.log(`服务器运行在端口 ${PORT}`);

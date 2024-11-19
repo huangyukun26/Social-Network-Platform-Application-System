@@ -5,6 +5,11 @@ const { performance } = require('perf_hooks');
 
 class RedisClient {
     constructor() {
+        // 如果是测试环境，直接返回
+        if (process.env.NODE_ENV === 'test') {
+            return;
+        }
+
         this.client = new Redis(config);
         this.metricsInterval = null;
         
@@ -407,7 +412,7 @@ class RedisClient {
         return session && Object.keys(session).length > 0 ? session : null;
     }
 
-    // 更新会话活跃时间
+    // 更新会��活跃时间
     async updateSessionActivity(userId, sessionId) {
         const sessionKey = `session:${userId}`;
         const sessionData = await this.client.hget(sessionKey, sessionId);
@@ -524,7 +529,7 @@ class RedisClient {
         try {
             console.log('开始清理所有缓存');
             
-            // 获取所有相关的缓存键
+            // 获取所相关的缓存键
             const patterns = [
                 'friend:*',
                 'friends:list:*',
@@ -793,10 +798,36 @@ class RedisClient {
         const messages = await this.client.get(key);
         return messages ? JSON.parse(messages) : null;
     }
+
+    // 添加 Redis hash 操作方法
+    async hset(key, field, value) {
+        try {
+            await this.client.hset(key, field, value);
+        } catch (error) {
+            console.error('Redis hset 失败:', error);
+            throw error;
+        }
+    }
+
+    async hget(key, field) {
+        try {
+            return await this.client.hget(key, field);
+        } catch (error) {
+            console.error('Redis hget 失败:', error);
+            return null;
+        }
+    }
+
+    async hdel(key, field) {
+        try {
+            await this.client.hdel(key, field);
+        } catch (error) {
+            console.error('Redis hdel 失败:', error);
+            throw error;
+        }
+    }
 }
 
-// 创建单例实例
-const redisClient = new RedisClient();
 
 // 确保在进程退出时进行清理
 process.on('SIGTERM', async () => {
@@ -806,5 +837,10 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
     await redisClient.gracefulShutdown();
 });
+
+// 根据环境导出不同的实例
+const redisClient = process.env.NODE_ENV === 'test' 
+    ? require('../tests/mocks/redisClient.mock')
+    : new RedisClient();
 
 module.exports = redisClient; 
