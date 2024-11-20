@@ -3,6 +3,7 @@ const router = express.Router();
 const Post = require('../models/Post');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
+const mongoose = require('mongoose');
 
 // 获取搜索建议（用于实时搜索）
 router.get('/suggestions', auth, async (req, res) => {
@@ -59,13 +60,110 @@ router.get('/suggestions', auth, async (req, res) => {
     }
 });
 
+// 获取相关帖子的优化版本
+const getRelatedPosts = async (q, exactMatches, currentUser) => {
+    const relatedPosts = await Post.aggregate([
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'author',
+                foreignField: '_id',
+                as: 'authorInfo'
+            }
+        },
+        {
+            $addFields: {
+                author: { $arrayElemAt: ['$authorInfo', 0] },
+                // 计算综合相关性得分
+                relevanceScore: {
+                    $add: [
+                        // 1. 内容相关性
+                        { 
+                            $cond: [
+                                { $regexMatch: { input: '$content', regex: q, options: 'i' } },
+                                2,
+                                0
+                            ]
+                        },
+                        // 2. 社交相关性 - 如果是关注的用户的帖子加分
+                        { 
+                            $cond: [
+                                { $in: ['$author._id', currentUser.following] },
+                                1.5,
+                                0
+                            ]
+                        },
+                        // 3. 互动热度
+                        { 
+                            $multiply: [
+                                { $add: [
+                                    { $size: '$likes' },
+                                    { $multiply: [{ $size: '$comments' }, 1.2] }
+                                ]},
+                                0.3
+                            ]
+                        },
+                        // 4. 时间衰减因子 - 最近7天的帖子优先
+                        {
+                            $multiply: [
+                                {
+                                    $divide: [
+                                        1,
+                                        { 
+                                            $add: [
+                                                1,
+                                                { 
+                                                    $divide: [
+                                                        { 
+                                                            $subtract: [
+                                                                new Date(),
+                                                                '$createdAt'
+                                                            ]
+                                                        },
+                                                        1000 * 60 * 60 * 24 * 7 // 7天
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                0.5
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            $match: {
+                isDeleted: false,
+                _id: { $nin: exactMatches.map(p => p._id) },
+                $or: [
+                    // 1. 内容相关
+                    { content: { $regex: q.split(' ').join('|'), $options: 'i' } },
+                    // 2. 作者相关
+                    { 'author._id': { $in: exactMatches.map(p => p.author._id) } },
+                    // 3. 标签相关（如果将来添加标签功能）
+                    // 4. 互动用户相关
+                    { 'likes': { $in: currentUser.following } },
+                    { 'comments.user': { $in: currentUser.following } }
+                ]
+            }
+        },
+        { $sort: { relevanceScore: -1, createdAt: -1 } },
+        { $limit: 10 }
+    ]);
+
+    return relatedPosts;
+};
+
 // 获取完整搜索结果
 router.get('/results', auth, async (req, res) => {
     try {
-        const { q, type = 'all', page = 1 } = req.query;
-        const limit = 10;
+        const { q, limit = 10 } = req.query;
+        const currentUser = await User.findById(req.userId);
         const results = {};
-
+        
         if (!q) {
             return res.json({
                 exactMatches: [],
@@ -77,6 +175,19 @@ router.get('/results', auth, async (req, res) => {
 
         // 精确匹配的搜索结果
         const exactMatches = await Post.aggregate([
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'author',
+                    foreignField: '_id',
+                    as: 'authorInfo'
+                }
+            },
+            {
+                $addFields: {
+                    author: { $arrayElemAt: ['$authorInfo', 0] }
+                }
+            },
             {
                 $match: {
                     isDeleted: false,
@@ -107,7 +218,7 @@ router.get('/results', auth, async (req, res) => {
                 }
             },
             { $sort: { relevanceScore: -1, createdAt: -1 } },
-            { $limit: limit }
+            { $limit: parseInt(limit) }
         ]);
 
         await Post.populate(exactMatches, [
@@ -126,85 +237,90 @@ router.get('/results', auth, async (req, res) => {
 
         results.relatedUsers = relatedUsers;
 
+        // 获取相关帖子
+        const relatedPosts = await getRelatedPosts(q, exactMatches, currentUser);
+        results.relatedPosts = relatedPosts;
+
         // 获取作者的其他热门帖子
         if (exactMatches.length > 0) {
-            const authorIds = [...new Set(exactMatches.map(post => post.author._id))];
-            const authorPosts = await Post.aggregate([
-                {
-                    $match: {
-                        isDeleted: false,
-                        'author._id': { $in: authorIds },
-                        _id: { $nin: exactMatches.map(p => p._id) }
-                    }
-                },
-                {
-                    $addFields: {
-                        popularity: {
-                            $add: [
-                                { $size: '$likes' },
-                                { $multiply: [{ $size: '$comments' }, 1.5] }
-                            ]
+            const authorIds = [...new Set(exactMatches.map(post => 
+                post.author._id ? post.author._id.toString() : null
+            ).filter(Boolean))];
+
+            if (authorIds.length > 0) {
+                const authorPosts = await Post.aggregate([
+                    {
+                        $lookup: {
+                            from: 'users',
+                            localField: 'author',
+                            foreignField: '_id',
+                            as: 'authorInfo'
                         }
-                    }
-                },
-                {
-                    $sort: { 
-                        popularity: -1,
-                        createdAt: -1 
-                    }
-                },
-                { $limit: 5 }
-            ]);
+                    },
+                    {
+                        $addFields: {
+                            author: { $arrayElemAt: ['$authorInfo', 0] }
+                        }
+                    },
+                    {
+                        $match: {
+                            isDeleted: false,
+                            'author._id': { $in: authorIds.map(id => new mongoose.Types.ObjectId(id)) },
+                            _id: { $nin: exactMatches.map(p => p._id) }
+                        }
+                    },
+                    {
+                        $addFields: {
+                            score: {
+                                $add: [
+                                    // 基础分数
+                                    { $multiply: [{ $size: '$likes' }, 0.3] },
+                                    { $multiply: [{ $size: '$comments' }, 0.4] },
+                                    // 社交关系加成
+                                    { 
+                                        $cond: [
+                                            { $in: ['$author._id', currentUser.following] },
+                                            1,
+                                            0
+                                        ]
+                                    },
+                                    // 时间因子
+                                    {
+                                        $multiply: [
+                                            {
+                                                $divide: [
+                                                    1,
+                                                    { 
+                                                        $add: [
+                                                            1,
+                                                            { 
+                                                                $subtract: [
+                                                                    new Date(),
+                                                                    '$createdAt'
+                                                                ]
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            0.5
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    { $sort: { score: -1, createdAt: -1 } },
+                    { $limit: 5 }
+                ]);
 
-            await Post.populate(authorPosts, {
-                path: 'author',
-                select: 'username avatar'
-            });
-
-            results.authorPosts = authorPosts;
+                results.authorPosts = authorPosts;
+            } else {
+                results.authorPosts = [];
+            }
+        } else {
+            results.authorPosts = [];
         }
-
-        // 获取相关帖子（基于内容相似度和标签）
-        const relatedPosts = await Post.aggregate([
-            {
-                $match: {
-                    isDeleted: false,
-                    _id: { $nin: exactMatches.map(p => p._id) },
-                    $or: [
-                        { content: { $regex: q.split(' ').join('|'), $options: 'i' } },
-                        { 'author._id': { $in: exactMatches.map(p => p.author._id) } }
-                    ]
-                }
-            },
-            {
-                $addFields: {
-                    similarityScore: {
-                        $add: [
-                            { $multiply: [{ $size: '$likes' }, 0.2] },
-                            { $multiply: [{ $size: '$comments' }, 0.3] },
-                            { $cond: [
-                                { $regexMatch: { 
-                                    input: '$content', 
-                                    regex: q.split(' ').join('|'), 
-                                    options: 'i' 
-                                }},
-                                1,
-                                0
-                            ]}
-                        ]
-                    }
-                }
-            },
-            { $sort: { similarityScore: -1, createdAt: -1 } },
-            { $limit: 5 }
-        ]);
-
-        await Post.populate(relatedPosts, {
-            path: 'author',
-            select: 'username avatar'
-        });
-
-        results.relatedPosts = relatedPosts;
 
         res.json(results);
     } catch (error) {

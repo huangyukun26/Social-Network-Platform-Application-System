@@ -155,9 +155,17 @@ const SearchBar = () => {
             headers: { Authorization: `Bearer ${token}` }
           }
         );
-        setSuggestions(response.data);
+        
+        // 确保返回数据的完整性
+        setSuggestions({
+          users: response.data.users || [],
+          posts: response.data.posts || [],
+          // 可以添加更多类型的建议
+          relatedTags: response.data.relatedTags || []
+        });
       } catch (error) {
         console.error('获取搜索建议失败:', error);
+        setSuggestions({ users: [], posts: [] });
       } finally {
         setLoading(false);
       }
