@@ -41,7 +41,10 @@ const upload = multer({
 // 获取当前用户的子
 router.get('/user/me', auth, async (req, res) => {
     try {
-        const posts = await Post.find({ author: req.userId })
+        const posts = await Post.find({ 
+            author: req.userId,
+            isDeleted: false
+        })
             .sort({ createdAt: -1 })
             .populate('author', 'username avatar')
             .populate('comments.user', 'username avatar');
@@ -80,7 +83,10 @@ router.get('/user/:userId', auth, async (req, res) => {
             }
         }
 
-        const posts = await Post.find({ author: req.params.userId })
+        const posts = await Post.find({ 
+            author: req.params.userId,
+            isDeleted: false
+        })
             .sort({ createdAt: -1 })
             .populate('author', 'username avatar')
             .populate('comments.user', 'username avatar');
@@ -97,8 +103,8 @@ router.get('/feed', auth, async (req, res) => {
     try {
         const currentUser = await User.findById(req.userId);
         
-        // 获取所有帖子
-        let allPosts = await Post.find()
+        // 获取所有未删除的帖子
+        let allPosts = await Post.find({ isDeleted: false })
             .populate('author', 'username avatar')
             .populate('comments.user', 'username avatar')
             .sort({ createdAt: -1 });
@@ -131,11 +137,11 @@ router.get('/feed/page/:page', auth, async (req, res) => {
         const limit = 10; // 每页显示的帖子数
         const currentUser = await User.findById(req.userId);
         
-        // 获取所有帖子总数
-        const total = await Post.countDocuments();
+        // 获取未删除的帖子总数
+        const total = await Post.countDocuments({ isDeleted: false });
         
-        // 获取所有帖子并分页
-        let allPosts = await Post.find()
+        // 获取所有未删除的帖子并分页
+        let allPosts = await Post.find({ isDeleted: false })
             .populate('author', 'username avatar')
             .populate('comments.user', 'username avatar')
             .sort({ createdAt: -1 })
@@ -312,6 +318,79 @@ router.post('/:postId/save', auth, async (req, res) => {
         await post.save();
         res.json(post);
     } catch (error) {
+        res.status(500).json({ message: '服务器错误' });
+    }
+});
+
+// 软删除帖子
+router.delete('/:postId', auth, async (req, res) => {
+    try {
+        const post = await Post.findOne({ 
+            _id: req.params.postId,
+            author: req.userId
+        });
+
+        if (!post) {
+            return res.status(404).json({ message: '帖子不存在' });
+        }
+
+        if (post.isDeleted) {
+            return res.status(400).json({ message: '帖子已经被删除' });
+        }
+
+        post.isDeleted = true;
+        post.deletedAt = new Date();
+        post.deleteReason = req.body.reason || '用户主动删除';
+        
+        await post.save();
+        
+        // 返回更新后的帖子数据
+        res.json({ 
+            message: '帖子已删除',
+            post: post
+        });
+    } catch (error) {
+        console.error('删除帖子失败:', error);
+        res.status(500).json({ message: '服务器错误' });
+    }
+});
+
+// 恢复已删除的帖子
+router.post('/:postId/restore', auth, async (req, res) => {
+    try {
+        const post = await Post.findOne({ 
+            _id: req.params.postId,
+            author: req.userId,
+            isDeleted: true
+        });
+
+        if (!post) {
+            return res.status(404).json({ message: '帖子不存在或未被删除' });
+        }
+
+        post.isDeleted = false;
+        post.deletedAt = null;
+        post.deleteReason = '';
+        await post.save();
+
+        res.json({ message: '帖子已恢复' });
+    } catch (error) {
+        console.error('恢复帖子失败:', error);
+        res.status(500).json({ message: '服务器错误' });
+    }
+});
+
+// 修改获取帖子列表的路由
+router.get('/', auth, async (req, res) => {
+    try {
+        const posts = await Post.find({ isDeleted: false })
+            .sort({ createdAt: -1 })
+            .populate('author', 'username avatar')
+            .populate('comments.user', 'username avatar');
+            
+        res.json(posts);
+    } catch (error) {
+        console.error('获取帖子列表失败:', error);
         res.status(500).json({ message: '服务器错误' });
     }
 });

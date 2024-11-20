@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Input, Button, List, Avatar, message, Space, Empty, Spin, Row, Col, Statistic } from 'antd';
+import { Card, Input, Button, List, Avatar, message, Space, Empty, Spin, Row, Col, Statistic, Modal, Menu, Dropdown } from 'antd';
 import { 
     LikeOutlined, 
     LikeFilled, 
@@ -11,7 +11,8 @@ import {
     EllipsisOutlined,
     UserAddOutlined,
     LeftOutlined,
-    RightOutlined
+    RightOutlined,
+    ExclamationCircleOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import styled from 'styled-components';
@@ -819,6 +820,59 @@ const Home = () => {
         navigate(`/profile/${userId}`);
     };
 
+    // 在组件内添加删除确认函数
+    const handleDeletePost = async (postId) => {
+        Modal.confirm({
+            title: '确认删除',
+            icon: <ExclamationCircleOutlined />,
+            content: '删除后的帖子可在30天内恢复，是否确认删除？',
+            okText: '确认',
+            cancelText: '取消',
+            onOk: async () => {
+                try {
+                    const token = sessionStorage.getItem('token');
+                    const sessionId = sessionStorage.getItem('sessionId');
+                    
+                    await axios.delete(
+                        `http://localhost:5000/api/posts/${postId}`, 
+                        {
+                            headers: { 
+                                Authorization: `Bearer ${token}`,
+                                'Session-ID': sessionId
+                            },
+                            data: { reason: '用户主动删除' } // 添加删除原因
+                        }
+                    );
+                    
+                    message.success('帖子已删除');
+                    // 更新本地状态
+                    setPosts(prevPosts => prevPosts.filter(post => post._id !== postId));
+                    
+                    // 可选：刷新帖子列表
+                    fetchPosts(1);
+                } catch (error) {
+                    console.error('删除帖子失败:', error);
+                    message.error('删除失败，请重试');
+                }
+            }
+        });
+    };
+
+    // 在帖子操作菜单中添加删除选项
+    const postActions = (post) => (
+        <Menu>
+            {post.author._id === user?._id && (
+                <Menu.Item 
+                    key="delete" 
+                    onClick={() => handleDeletePost(post._id)}
+                    danger
+                >
+                    删除帖子
+                </Menu.Item>
+            )}
+        </Menu>
+    );
+
     if (initialLoading) {
         return (
             <div style={{ 
@@ -876,7 +930,11 @@ const Home = () => {
                                         >
                                             {author.username}
                                         </Link>
-                                        <EllipsisOutlined className="more-options" />
+                                        {post.author._id === user?._id && (
+                                            <Dropdown overlay={postActions(post)} trigger={['click']}>
+                                                <Button type="text" icon={<EllipsisOutlined />} />
+                                            </Dropdown>
+                                        )}
                                     </PostHeader>
                                     
                                     {post.images && post.images.length > 0 ? (

@@ -41,6 +41,18 @@ const postSchema = new mongoose.Schema({
     pushWeight: {
         type: Number,
         default: 1
+    },
+    isDeleted: {
+        type: Boolean,
+        default: false
+    },
+    deletedAt: {
+        type: Date,
+        default: null
+    },
+    deleteReason: {
+        type: String,
+        default: ''
     }
 }, {
     timestamps: true
