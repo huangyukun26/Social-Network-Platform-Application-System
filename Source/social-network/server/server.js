@@ -90,6 +90,7 @@ const followRoutes = require('./routes/followRoutes');
 const adminRoutes = require('./routes/admin');
 const cacheMonitorRoutes = require('./routes/admin/cache-monitor');
 const messageRoutes = require('./routes/messageRoutes');
+const searchRoutes = require('./routes/search');
 
 // 注册路由
 app.use('/api/users', userRoutes);
@@ -99,6 +100,7 @@ app.use('/api/follow', followRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cache', cacheMonitorRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/search', searchRoutes);
 
 // 基础路由
 app.get('/', (req, res) => {
@@ -154,6 +156,9 @@ if (process.env.NODE_ENV !== 'test') {
             console.log('- GET  /api/messages/history/:userId');
             console.log('- PUT  /api/messages/read/:senderId');
             console.log('- GET  /api/messages/unread');
+            console.log('搜索相关路由:');
+            console.log('- GET  /api/search/suggestions');
+            console.log('- GET  /api/search/results');
         });
     });
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Layout, Avatar, Button } from 'antd';
-import Navbar from './Navbar';
+
 import styled from 'styled-components';
 import { theme } from '../../styles/theme';
 import Sidebar from './Sidebar'; // 新增侧边栏组件
@@ -8,6 +8,7 @@ import { UserOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { message } from 'antd';
+import SearchBar from './SearchBar';
 
 const { Content } = Layout;
 
@@ -91,6 +92,14 @@ const SuggestionItem = styled.div`
   }
 `;
 
+const SearchContainer = styled.div`
+  background: white;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  margin-bottom: 16px;
+`;
+
 const AppLayout = ({ children }) => {
     const [suggestions, setSuggestions] = useState([]);
 
@@ -129,6 +138,9 @@ const AppLayout = ({ children }) => {
                     {children}
                 </StyledContent>
                 <RightSidebar>
+                    <SearchContainer>
+                        <SearchBar />
+                    </SearchContainer>
                     <FriendSuggestions>
                         <h3>好友推荐</h3>
                         {suggestions.map(user => (

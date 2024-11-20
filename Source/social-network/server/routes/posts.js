@@ -395,4 +395,52 @@ router.get('/', auth, async (req, res) => {
     }
 });
 
+// 添加搜索路由
+router.get('/search', auth, async (req, res) => {
+    try {
+        const { query, page = 1 } = req.query;
+        const limit = 10;
+        
+        if (!query) {
+            return res.json({
+                posts: [],
+                total: 0,
+                hasMore: false
+            });
+        }
+
+        const searchQuery = {
+            $and: [
+                { isDeleted: false },
+                {
+                    $or: [
+                        { content: { $regex: query, $options: 'i' } },
+                        { 'author.username': { $regex: query, $options: 'i' } }
+                    ]
+                }
+            ]
+        };
+
+        const total = await Post.countDocuments(searchQuery);
+        
+        const posts = await Post.find(searchQuery)
+            .populate('author', 'username avatar')
+            .populate('comments.user', 'username avatar')
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit + 1);
+
+        const hasMore = posts.length > limit;
+        
+        res.json({
+            posts: posts.slice(0, limit),
+            total,
+            hasMore
+        });
+    } catch (error) {
+        console.error('搜索失败:', error);
+        res.status(500).json({ message: '搜索失败' });
+    }
+});
+
 module.exports = router;
