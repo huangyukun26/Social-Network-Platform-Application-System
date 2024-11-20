@@ -13,38 +13,44 @@ import MessagePanel from '../Messages/MessagePanel';
 const { Header } = Layout;
 
 const StyledHeader = styled(Header)`
-  background-color: ${theme.colors.dark} !important;
-  border-bottom: 1px solid ${theme.colors.border};
-  position: fixed;
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgb(239, 243, 244);
+  position: sticky;
   width: 100%;
   z-index: 1000;
   top: 0;
+  height: 53px;
+  line-height: 53px;
+  padding: 0 16px;
 `;
 
 const Logo = styled.div`
   float: left;
-  color: ${theme.colors.text.white};
+  color: #000;
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 700;
   margin-right: 40px;
+  display: none;
 `;
 
 const StyledMenu = styled(Menu)`
-  background-color: ${theme.colors.dark};
+  background: transparent;
   border-bottom: none;
   
   .ant-menu-item {
-    color: ${theme.colors.text.white} !important;
+    color: #000 !important;
     
     &:hover {
-      color: ${theme.colors.success} !important;
+      color: rgb(29, 155, 240) !important;
     }
     
     &.ant-menu-item-selected {
-      background-color: ${theme.colors.hover.dark} !important;
+      background-color: transparent !important;
+      color: rgb(29, 155, 240) !important;
       
       &::after {
-        border-bottom-color: ${theme.colors.success} !important;
+        border-bottom-color: rgb(29, 155, 240) !important;
       }
     }
   }

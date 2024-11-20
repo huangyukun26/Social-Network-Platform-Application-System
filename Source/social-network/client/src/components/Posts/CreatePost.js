@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Input, Button, message, Upload } from 'antd';
+import { Input, Button, message, Upload, Carousel } from 'antd';
 import { PictureOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import styled from 'styled-components';
@@ -22,15 +22,65 @@ const PostForm = styled.div`
 `;
 
 const UploadArea = styled.div`
+    margin: 16px 0;
+    
     .ant-upload-list {
-        display: flex;
-        justify-content: center;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 8px;
+        margin-top: 16px;
+    }
+    
+    .ant-upload-list-picture-card-container,
+    .ant-upload.ant-upload-select {
+        width: 100% !important;
+        height: auto !important;
+        margin: 0 !important;
+    }
+    
+    .ant-upload-list-picture-card .ant-upload-list-item {
+        padding: 0;
+        border-radius: 4px;
+        overflow: hidden;
+        
+        &::before {
+            content: "";
+            display: block;
+            padding-top: 100%;
+        }
+        
+        img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
     }
     
     .ant-upload.ant-upload-select {
-        width: 100%;
-        height: 200px;
-        margin: 0;
+        border: 2px dashed #e8e8e8;
+        border-radius: 4px;
+        background: #fafafa;
+        
+        &:hover {
+            border-color: #1890ff;
+        }
+        
+        .ant-upload {
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            
+            .anticon {
+                font-size: 24px;
+                color: #999;
+                margin-bottom: 8px;
+            }
+        }
     }
 `;
 
@@ -39,74 +89,80 @@ const ActionButtons = styled.div`
     justify-content: flex-end;
 `;
 
-const CreatePost = ({ onPostCreated }) => {
+const CreatePost = ({ onSuccess, onError }) => {
     const [content, setContent] = useState('');
     const [fileList, setFileList] = useState([]);
     const [loading, setLoading] = useState(false);
 
-    const handleUploadChange = ({ fileList: newFileList }) => {
-        setFileList(newFileList);
-    };
-
     const handleSubmit = async () => {
         if (!content.trim() && fileList.length === 0) {
-            return message.warning('请输入内容或上传图片');
+            message.error('请输入内容或上传图片');
+            return;
         }
 
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
-            
             const formData = new FormData();
             formData.append('content', content);
             
-            if (fileList.length > 0 && fileList[0].originFileObj) {
-                const file = fileList[0].originFileObj;
-                formData.append('image', file);
-            }
-
-            console.log('准备发送的数据:', {
-                content,
-                hasImage: fileList.length > 0,
-                token: token ? '存在' : '不存在'
+            fileList.forEach(file => {
+                if (file.originFileObj) {
+                    formData.append('images', file.originFileObj);
+                }
             });
 
+            const token = sessionStorage.getItem('token');
+            const sessionId = sessionStorage.getItem('sessionId');
+            
             const response = await axios.post(
                 'http://localhost:5000/api/posts',
                 formData,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
+                        'Session-ID': sessionId,
                         'Content-Type': 'multipart/form-data'
-                    },
-                    timeout: 10000,
-                    validateStatus: function (status) {
-                        return status >= 200 && status < 500;
                     }
                 }
             );
 
-            if (response.status === 201) {
-                setContent('');
-                setFileList([]);
-                message.success('发布成功！');
-                
-                if (onPostCreated) {
-                    onPostCreated(response.data);
-                }
-            } else {
-                throw new Error(response.data.message || '发布失败');
+            setContent('');
+            setFileList([]);
+            message.success('发布成功');
+            
+            if (onSuccess) {
+                onSuccess(response.data);
             }
         } catch (error) {
-            console.error('发布失败详情:', {
-                message: error.message,
-                response: error.response?.data,
-                status: error.response?.status
-            });
-            message.error(error.response?.data?.message || '发布失败，请重试');
+            console.error('发布失败:', error);
+            if (onError) {
+                onError(error);
+            } else {
+                message.error('发布失败，请重试');
+            }
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleUploadChange = ({ fileList: newFileList }) => {
+        setFileList(newFileList);
+    };
+
+    const beforeUpload = (file) => {
+        const isImage = file.type.startsWith('image/');
+        if (!isImage) {
+            message.error('只能上传图片文件！');
+            return false;
+        }
+        
+        const isLt20M = file.size / 1024 / 1024 < 20;
+        if (!isLt20M) {
+            message.error('图片必须小于 20MB！');
+            return false;
+        }
+        
+        return false; // 返回 false 阻止自动上传
     };
 
     return (
@@ -124,27 +180,34 @@ const CreatePost = ({ onPostCreated }) => {
                         listType="picture-card"
                         fileList={fileList}
                         onChange={handleUploadChange}
-                        beforeUpload={() => false}
-                        maxCount={1}
+                        beforeUpload={beforeUpload}
+                        multiple={true}
+                        maxCount={10}
+                        accept="image/*"
                     >
-                        {fileList.length === 0 && (
+                        {fileList.length < 10 && (
                             <div>
                                 <PictureOutlined />
-                                <div style={{ marginTop: 8 }}>上传图片</div>
+                                <div style={{ marginTop: 8, color: '#666' }}>上传图片</div>
+                                <div style={{ 
+                                    fontSize: '12px', 
+                                    color: '#999',
+                                    marginTop: 4 
+                                }}>
+                                    最多10张，单张限20MB
+                                </div>
                             </div>
                         )}
                     </Upload>
                 </UploadArea>
 
-                <ActionButtons>
-                    <Button 
-                        type="primary"
-                        onClick={handleSubmit}
-                        loading={loading}
-                    >
-                        发布
-                    </Button>
-                </ActionButtons>
+                <Button 
+                    type="primary"
+                    onClick={handleSubmit}
+                    loading={loading}
+                >
+                    发布
+                </Button>
             </PostForm>
         </CreatePostContainer>
     );

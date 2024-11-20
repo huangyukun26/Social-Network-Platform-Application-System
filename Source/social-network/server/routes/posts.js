@@ -34,9 +34,9 @@ const upload = multer({
         cb(null, true);
     },
     limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB
+        fileSize: 20 * 1024 * 1024 // 20MB
     }
-}).single('image');
+}).array('images', 10);
 
 // 获取当前用户的子
 router.get('/user/me', auth, async (req, res) => {
@@ -169,69 +169,38 @@ router.get('/feed/page/:page', auth, async (req, res) => {
 });
 
 // 创建帖子
-router.post('/', auth, (req, res) => {
-    console.log('收到创建帖子请求');
-    
-    upload(req, res, async (err) => {
-        try {
-            console.log('开始处理文件上传');
-            
+router.post('/', auth, async (req, res) => {
+    try {
+        upload(req, res, async (err) => {
             if (err) {
                 console.error('文件上传错误:', err);
-                return res.status(400).json({ 
-                    message: err.message || '文件上传失败',
-                    error: err
-                });
+                return res.status(400).json({ message: err.message });
             }
 
-            console.log('请求信息:', {
-                body: req.body,
-                file: req.file,
-                userId: req.userId,
-                headers: req.headers
-            });
+            console.log('接收到的文件:', req.files);
+            console.log('接收到的内容:', req.body);
 
-            // 验证必要字段
-            if (!req.body.content && !req.file) {
-                return res.status(400).json({ 
-                    message: '内容和图片至少需要提供一个'
-                });
-            }
-
-            const newPost = new Post({
+            // 处理图片路径
+            const imagePaths = req.files ? req.files.map(file => `/uploads/posts/${file.filename}`) : [];
+            
+            const post = new Post({
                 author: req.userId,
                 content: req.body.content || '',
-                image: req.file ? `/uploads/posts/${req.file.filename}` : null
+                images: imagePaths // 确保是数组格式
             });
 
-            console.log('准备保存的帖子数据:', newPost);
-
-            const post = await newPost.save();
-            console.log('帖子保存成功');
-
-            await post.populate('author', 'username avatar');
-            console.log('作者信息填充成功');
-
-            res.status(201).json(post);
-        } catch (error) {
-            console.error('创建帖子过程中发生错误:', error);
-            // 如果是文件相关错误，清理已上传的文件
-            if (req.file) {
-                try {
-                    fs.unlinkSync(req.file.path);
-                    console.log('清理临时文件成功');
-                } catch (unlinkError) {
-                    console.error('清理临时文件失败:', unlinkError);
-                }
-            }
+            await post.save();
             
-            res.status(500).json({ 
-                message: '服务器错误',
-                error: error.message,
-                stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-            });
-        }
-    });
+            // 填充作者信息
+            await post.populate('author', 'username avatar');
+            
+            console.log('创建的帖子:', post);
+            res.status(201).json(post);
+        });
+    } catch (error) {
+        console.error('创建帖子错误:', error);
+        res.status(500).json({ message: '服务器错误' });
+    }
 });
 
 // 点赞帖子

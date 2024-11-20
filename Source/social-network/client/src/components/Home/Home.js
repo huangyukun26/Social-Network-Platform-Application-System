@@ -9,7 +9,9 @@ import {
     SaveFilled,
     SendOutlined,
     EllipsisOutlined,
-    UserAddOutlined
+    UserAddOutlined,
+    LeftOutlined,
+    RightOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import styled from 'styled-components';
@@ -17,18 +19,15 @@ import { theme } from '../../styles/theme';
 import { useNavigate, Link } from 'react-router-dom';
 import { CreatePost } from '../Posts';
 import PerformanceMonitor from '../../utils/performanceMonitor';
+import { Carousel } from 'antd';
 
 const { TextArea } = Input;
 
 // Instagram风格的容器
 const Container = styled.div`
-  max-width: 470px;
-  margin: 0 auto;
-  padding: ${theme.spacing.lg} 0;
-  
-  @media (max-width: 768px) {
-    padding: 0;
-  }
+  width: 100%;
+  margin: 0;
+  padding: 0;
 `;
 
 // Stories区域
@@ -95,23 +94,18 @@ const CreatePostArea = styled.div`
 `;
 
 // 帖子卡片
-const PostCard = styled(Card)`
-  margin-bottom: 24px;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: none;
-  border: 1px solid ${theme.colors.border};
-  
-  .ant-card-body {
-    padding: 0;
-  }
+const PostCard = styled.div`
+  background: white;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+  margin-bottom: 0;
+  padding: 12px 16px;
 `;
 
 const PostHeader = styled.div`
   padding: 14px 16px;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid ${theme.colors.border};
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
   
   .username {
     margin-left: 12px;
@@ -130,29 +124,38 @@ const PostHeader = styled.div`
   }
 `;
 
+// 图片容器
 const PostImage = styled.div`
-  position: relative;
-  width: 100%;
-  padding-bottom: 100%;
-  
-  img {
-    position: absolute;
-    top: 0;
-    left: 0;
+    position: relative;
     width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
+    padding-top: 100%; // 保持1:1的宽高比
+    background: #fff;
+    overflow: hidden;
+    
+    img {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+        background: #fff;
+    }
 `;
 
 const PostActions = styled.div`
   padding: 8px 16px;
   display: flex;
-  justify-content: space-between;
+  gap: 16px;
   
-  .left-actions {
-    display: flex;
-    gap: 16px;
+  .ant-btn {
+    color: #536471;
+    
+    &:hover {
+      color: rgb(29, 155, 240);
+      background-color: rgba(29, 155, 240, 0.1);
+    }
   }
 `;
 
@@ -166,26 +169,15 @@ const ActionIcon = styled.span`
   }
 `;
 
+// 帖子内容区域
 const PostContent = styled.div`
-    padding: ${theme.spacing.md} ${theme.spacing.lg};
+    padding: 12px 16px;
     
-    // 当没有图片时，增加内容的显示样式
-    &.no-image {
-        font-size: 18px;
-        padding: ${theme.spacing.xl};
-        min-height: 100px;
-        display: flex;
-        align-items: center;
-        background: ${theme.colors.background};
-        border-radius: 8px;
-        margin: ${theme.spacing.md} 0;
-    }
-
     .likes {
         font-weight: 600;
         margin-bottom: 8px;
     }
-
+    
     .caption {
         margin-bottom: 8px;
         
@@ -194,56 +186,70 @@ const PostContent = styled.div`
             margin-right: 8px;
         }
     }
-
+    
     .timestamp {
-        color: ${theme.colors.textSecondary};
         font-size: 12px;
+        color: #8e8e8e;
     }
 `;
 
+// 评论区域
 const CommentSection = styled.div`
-  border-top: 1px solid ${theme.colors.border};
-`;
-
-const CommentInput = styled.div`
-  display: flex;
-  padding: 16px;
-  gap: 12px;
-  align-items: flex-start;
-  
-  .ant-input {
-    border: none;
-    resize: none;
-    padding: 8px 0;
-    
-    &:focus {
-      box-shadow: none;
-    }
-  }
-  
-  .ant-btn {
-    padding: 0;
-    height: auto;
-    line-height: 1;
-    
-    &:hover {
-      background: none;
-      color: ${theme.colors.primary};
-    }
-  }
+    padding: 0 16px;
+    border-top: 1px solid rgba(0, 0, 0, 0.15);
+    background: white;
 `;
 
 const CommentList = styled.div`
-  padding: 0 16px 16px;
-  
-  .comment {
-    margin-bottom: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 8px 0;
     
-    .username {
-      font-weight: 600;
-      margin-right: 8px;
+    .comment {
+        margin-bottom: 8px;
+        line-height: 1.4;
+        
+        .username {
+            font-weight: 600;
+            margin-right: 8px;
+        }
     }
-  }
+
+    &::-webkit-scrollbar {
+        width: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: #c7c7c7;
+        border-radius: 2px;
+    }
+`;
+
+const CommentInput = styled.div`
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    border-top: 1px solid rgba(0, 0, 0, 0.15);
+    
+    .ant-input {
+        border: none;
+        padding: 8px 0;
+        resize: none;
+        
+        &:focus {
+            box-shadow: none;
+        }
+    }
+    
+    .ant-btn {
+        padding: 0 8px;
+        height: auto;
+        
+        &:hover {
+            background: transparent;
+            color: #1890ff;
+        }
+    }
 `;
 
 const FriendSuggestions = styled.div`
@@ -302,6 +308,101 @@ const PerformanceCard = styled(Card)`
     .ant-statistic-content {
         color: #1890ff;
     }
+`;
+
+// 修改轮播图样式组件
+const CarouselWrapper = styled.div`
+    position: relative;
+    background: #fff;
+    border-radius: 4px;
+    overflow: hidden;
+    
+    .ant-carousel {
+        .slick-slide {
+            > div {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #fff;
+            }
+        }
+
+        .slick-dots {
+            bottom: 12px;
+            li {
+                margin: 0 4px;
+                
+                button {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    background: rgba(255, 255, 255, 0.9) !important;
+                    border: 2px solid rgba(0, 149, 246, 0.8);
+                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+                    transition: all 0.3s ease;
+                    
+                    &:hover {
+                        border-color: rgb(0, 149, 246);
+                        transform: scale(1.1);
+                    }
+                }
+                
+                &.slick-active button {
+                    background: rgb(0, 149, 246) !important;
+                    border-color: rgb(0, 149, 246);
+                    transform: scale(1.2);
+                }
+            }
+        }
+
+        // 优化左右箭头
+        .slick-prev,
+        .slick-next {
+            z-index: 2;
+            width: 32px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(0, 149, 246, 0.3);
+            border-radius: 50%;
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            
+            &:hover {
+                background: #fff;
+                border-color: rgb(0, 149, 246);
+                box-shadow: 0 2px 12px rgba(0, 149, 246, 0.2);
+            }
+            
+            &::before {
+                color: rgb(0, 149, 246);
+                font-size: 16px;
+                line-height: 1;
+            }
+        }
+
+        .slick-prev {
+            left: 16px;
+        }
+
+        .slick-next {
+            right: 16px;
+        }
+
+        &:hover {
+            .slick-prev,
+            .slick-next {
+                opacity: 1;
+            }
+        }
+    }
+`;
+
+const PostsList = styled.div`
+  width: 100%;
 `;
 
 const Home = () => {
@@ -442,7 +543,7 @@ const Home = () => {
 
             setSuggestions(response.data);
         } catch (error) {
-            console.error('获取推荐失败:', error.response || error);
+            console.error('获取推荐败:', error.response || error);
             setSuggestions([]); 
         }
     }, []);
@@ -517,7 +618,7 @@ const Home = () => {
         } catch (error) {
             console.error('点赞失败:', error);
             message.error('点赞失败，请重试');
-            // 发生错误时重新获取帖子列表
+            // 发生错误时新获取帖子列表
             fetchPosts();
         }
     };
@@ -567,10 +668,34 @@ const Home = () => {
         }
     };
 
-    const handlePostCreated = (newPost) => {
-        // 更新帖子列表
-        setPosts(prevPosts => [newPost, ...prevPosts]);
-    };
+    const handlePostCreated = useCallback((newPost) => {
+        try {
+            // 确保新帖子包含所有必要的信息
+            const currentUser = JSON.parse(sessionStorage.getItem('user'));
+            const enrichedPost = {
+                ...newPost,
+                author: {
+                    _id: currentUser._id,
+                    username: currentUser.username,
+                    avatar: currentUser.avatar
+                },
+                likes: [],
+                comments: [],
+                savedBy: [],
+                createdAt: new Date().toISOString()
+            };
+            
+            // 更新帖子列表
+            setPosts(prevPosts => [enrichedPost, ...prevPosts]);
+            
+            // 刷新第一页的帖子
+            fetchPosts(1);
+            
+        } catch (error) {
+            console.error('理新帖子失败:', error);
+            message.error('更新帖子列表失败');
+        }
+    }, [fetchPosts]);
 
     const handleSave = async (postId) => {
         try {
@@ -629,9 +754,9 @@ const Home = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
             message.success('好友请求已发送');
-            fetchSuggestions(); // 刷新推荐列表
+            fetchSuggestions(); // 刷推荐列表
         } catch (error) {
-            message.error('发送请求失败');
+            message.error('送请求失败');
         }
     };
 
@@ -708,171 +833,157 @@ const Home = () => {
     }
 
     return (
-        <Container>
-            {renderPerformanceMetrics()}
-            
-            <StoriesContainer>
-                {/* Stories示例 */}
-                {[1,2,3,4,5].map(i => (
-                    <StoryItem key={i}>
-                        <Avatar 
-                            className="story-avatar"
-                            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${i}`}
-                        />
-                        <span className="story-username">user_{i}</span>
-                    </StoryItem>
-                ))}
-            </StoriesContainer>
+        <>
+            <Container>
+                <PostsList>
+                    <List
+                        dataSource={posts}
+                        loadMore={hasMore && (
+                            <div style={{ textAlign: 'center', margin: '12px 0' }}>
+                                <Button onClick={loadMore} loading={loadingMore}>
+                                    加载更多
+                                </Button>
+                            </div>
+                        )}
+                        locale={{
+                            emptyText: <Empty description="暂无动态" />
+                        }}
+                        renderItem={post => {
+                            if (!post?._id || !post?.author?._id) {
+                                console.warn('Invalid post data:', post);
+                                return null;
+                            }
 
-            <FriendSuggestions>
-                <h3>好友推荐</h3>
-                {suggestions.map(user => (
-                    <SuggestionItem key={user._id}>
-                        <div className="user-info">
-                            <Avatar 
-                                className="avatar"
-                                src={getFullAvatarUrl(user.avatar)}
-                                icon={<UserOutlined />}
-                            />
-                            <Link to={`/profile/${user._id}`} className="username">
-                                {user.username}
-                            </Link>
-                        </div>
-                        <Button
-                            type="link"
-                            icon={<UserAddOutlined />}
-                            onClick={() => handleSendRequest(user._id)}
-                        >
-                            添加好友
-                        </Button>
-                    </SuggestionItem>
-                ))}
-            </FriendSuggestions>
+                            const author = post.author || {};
+                            const likes = post.likes || [];
+                            const comments = post.comments || [];
+                            const savedBy = post.savedBy || [];
 
-            <CreatePost onPostCreated={handlePostCreated} />
+                            return (
+                                <PostCard key={post._id}>
+                                    <PostHeader>
+                                        <Avatar 
+                                            src={author.avatar ? getFullAvatarUrl(author.avatar) : null} 
+                                            icon={<UserOutlined />} 
+                                        />
+                                        <Link 
+                                            to={`/profile/${author._id}`} 
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                handleProfileClick(author._id);
+                                            }}
+                                            className="username"
+                                        >
+                                            {author.username}
+                                        </Link>
+                                        <EllipsisOutlined className="more-options" />
+                                    </PostHeader>
+                                    
+                                    {post.images && post.images.length > 0 ? (
+                                        <CarouselWrapper>
+                                            <Carousel
+                                                dots={post.images.length > 1}
+                                                infinite={true}
+                                                speed={300}
+                                                arrows={post.images.length > 1}
+                                                draggable={true}
+                                                touchThreshold={10}
+                                                prevArrow={<LeftOutlined />}
+                                                nextArrow={<RightOutlined />}
+                                            >
+                                                {post.images.map((image, index) => (
+                                                    <div key={index}>
+                                                        <PostImage>
+                                                            <img
+                                                                src={getFullImageUrl(image)}
+                                                                alt={`Post image ${index + 1}`}
+                                                                loading="lazy"
+                                                            />
+                                                        </PostImage>
+                                                    </div>
+                                                ))}
+                                            </Carousel>
+                                        </CarouselWrapper>
+                                    ) : post.image ? (
+                                        <PostImage>
+                                            <img
+                                                src={getFullImageUrl(post.image)}
+                                                alt="Post content"
+                                                loading="lazy"
+                                            />
+                                        </PostImage>
+                                    ) : null}
 
-            <List
-                dataSource={posts}
-                loadMore={hasMore && (
-                    <div style={{ textAlign: 'center', margin: '12px 0' }}>
-                        <Button 
-                            onClick={loadMore} 
-                            loading={loadingMore}
-                        >
-                            加载更多
-                        </Button>
-                    </div>
-                )}
-                locale={{
-                    emptyText: <Empty description="暂无动态" />
-                }}
-                renderItem={post => {
-                    if (!post?._id || !post?.author?._id) {
-                        console.warn('Invalid post data:', post);
-                        return null;
-                    }
-
-                    const author = post.author || {};
-                    const likes = post.likes || [];
-                    const comments = post.comments || [];
-                    const savedBy = post.savedBy || [];
-
-                    return (
-                        <PostCard key={post._id}>
-                            <PostHeader>
-                                <Avatar 
-                                    src={author.avatar ? getFullAvatarUrl(author.avatar) : null} 
-                                    icon={<UserOutlined />} 
-                                />
-                                <Link 
-                                    to={`/profile/${author._id}`} 
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        handleProfileClick(author._id);
-                                    }}
-                                    className="username"
-                                >
-                                    {author.username}
-                                </Link>
-                                <EllipsisOutlined className="more-options" />
-                            </PostHeader>
-                            
-                            {post.image ? (
-                                <PostImage onDoubleClick={() => !likes.includes(user?._id) && handleLike(post._id)}>
-                                    <img src={getFullImageUrl(post.image)} alt="post" />
-                                </PostImage>
-                            ) : (
-                                <PostContent className="no-image">
-                                    {post.content}
-                                </PostContent>
-                            )}
-
-                            <PostActions>
-                                <Space>
-                                    <Button 
-                                        type="text" 
-                                        icon={likes.includes(user?._id) ? <LikeFilled /> : <LikeOutlined />}
-                                        onClick={() => handleLike(post._id)}
-                                    />
-                                    <Button 
-                                        type="text" 
-                                        icon={<CommentOutlined />} 
-                                    />
-                                    <Button 
-                                        type="text" 
-                                        icon={savedBy.includes(user?._id) ? <SaveFilled /> : <SaveOutlined />}
-                                        onClick={() => handleSave(post._id)}
-                                    />
-                                </Space>
-                            </PostActions>
-                            
-                            <PostContent>
-                                <div className="likes">
-                                    {likes.length} 次赞
-                                </div>
-                                <div className="caption">
-                                    <span className="username">{author.username}</span>
-                                    {post.content}
-                                </div>
-                                <div className="timestamp">
-                                    {formatTime(post.createdAt)}
-                                </div>
-                            </PostContent>
-                            
-                            <CommentSection>
-                                <CommentList>
-                                    {comments.map((comment, index) => (
-                                        <div key={`${post._id}-comment-${index}`} className="comment">
-                                            <span className="username">{comment.user?.username || '未知用户'}</span>
-                                            {comment.content}
+                                    <PostActions>
+                                        <Space>
+                                            <Button 
+                                                type="text" 
+                                                icon={likes.includes(user?._id) ? <LikeFilled /> : <LikeOutlined />}
+                                                onClick={() => handleLike(post._id)}
+                                            />
+                                            <Button 
+                                                type="text" 
+                                                icon={<CommentOutlined />} 
+                                            />
+                                            <Button 
+                                                type="text" 
+                                                icon={savedBy.includes(user?._id) ? <SaveFilled /> : <SaveOutlined />}
+                                                onClick={() => handleSave(post._id)}
+                                            />
+                                        </Space>
+                                    </PostActions>
+                                    
+                                    <PostContent>
+                                        <div className="likes">
+                                            {likes.length} 次赞
                                         </div>
-                                    ))}
-                                </CommentList>
-                                
-                                <CommentInput>
-                                    <TextArea
-                                        value={commentContent[post._id] || ''}
-                                        onChange={e => setCommentContent({
-                                            ...commentContent,
-                                            [post._id]: e.target.value
-                                        })}
-                                        placeholder="添加评论..."
-                                        autoSize
-                                    />
-                                    <Button 
-                                        type="link"
-                                        onClick={() => handleComment(post._id)}
-                                        loading={submitting}
-                                    >
-                                        发布
-                                    </Button>
-                                </CommentInput>
-                            </CommentSection>
-                        </PostCard>
-                    );
-                }}
-            />
-        </Container>
+                                        <div className="caption">
+                                            <span className="username">{author.username}</span>
+                                            {post.content}
+                                        </div>
+                                        <div className="timestamp">
+                                            {formatTime(post.createdAt)}
+                                        </div>
+                                    </PostContent>
+                                    
+                                    <CommentSection>
+                                        <CommentList>
+                                            {comments.map((comment, index) => (
+                                                <div key={`${post._id}-comment-${index}`} className="comment">
+                                                    <span className="username">{comment.user?.username || '未知用户'}</span>
+                                                    {comment.content}
+                                                </div>
+                                            ))}
+                                        </CommentList>
+                                        
+                                        <CommentInput>
+                                            <TextArea
+                                                value={commentContent[post._id] || ''}
+                                                onChange={e => setCommentContent({
+                                                    ...commentContent,
+                                                    [post._id]: e.target.value
+                                                })}
+                                                placeholder="添加评论..."
+                                                autoSize
+                                            />
+                                            <Button 
+                                                type="link"
+                                                onClick={() => handleComment(post._id)}
+                                                loading={submitting}
+                                            >
+                                                发布
+                                            </Button>
+                                        </CommentInput>
+                                    </CommentSection>
+                                </PostCard>
+                            );
+                        }}
+                    />
+                </PostsList>
+            </Container>
+            
+            {/* 好友推荐移到 AppLayout 的 RightSidebar 中 */}
+        </>
     );
 };
 

@@ -749,39 +749,27 @@ const Profile = () => {
                     <PostGrid>
                         {posts.map(post => (
                             <PostItem key={post._id} onClick={() => handlePostClick(post)}>
-                                {post.image ? (
+                                {(post.images?.[0] || post.image) ? (
                                     <>
-                                        <PostImage 
-                                            src={`http://localhost:5000${post.image}`} 
-                                            alt={post.description} 
+                                        <PostImage
+                                            src={`http://localhost:5000${post.images?.[0] || post.image}`}
+                                            alt="Post preview"
                                         />
                                         <Overlay className="overlay">
-                                            <div style={{ color: 'white', display: 'flex', gap: '20px' }}>
-                                                <span>
+                                            <Space size={30}>
+                                                <div>
                                                     <HeartOutlined /> {post.likes?.length || 0}
-                                                </span>
-                                                <span>
+                                                </div>
+                                                <div>
                                                     <CommentOutlined /> {post.comments?.length || 0}
-                                                </span>
-                                            </div>
+                                                </div>
+                                            </Space>
                                         </Overlay>
                                     </>
                                 ) : (
-                                    <>
-                                        <TextPostOverlay>
-                                            {post.description}
-                                        </TextPostOverlay>
-                                        <Overlay className="overlay">
-                                            <div style={{ color: 'white', display: 'flex', gap: '20px' }}>
-                                                <span>
-                                                    <HeartOutlined /> {post.likes?.length || 0}
-                                                </span>
-                                                <span>
-                                                    <CommentOutlined /> {post.comments?.length || 0}
-                                                </span>
-                                            </div>
-                                        </Overlay>
-                                    </>
+                                    <div className="text-only">
+                                        {post.content}
+                                    </div>
                                 )}
                             </PostItem>
                         ))}
@@ -854,10 +842,10 @@ const Profile = () => {
             >
                 {selectedPost && (
                     <PostModalWrapper>
-                        <PostImageSection textOnly={!selectedPost.image}>
-                            {selectedPost.image ? (
+                        <PostImageSection textOnly={!selectedPost.images?.[0] && !selectedPost.image}>
+                            {(selectedPost.images?.[0] || selectedPost.image) ? (
                                 <img 
-                                    src={`http://localhost:5000${selectedPost.image}`}
+                                    src={`http://localhost:5000${selectedPost.images?.[0] || selectedPost.image}`}
                                     alt={selectedPost.content}
                                 />
                             ) : (

@@ -10,8 +10,14 @@ const postSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    images: [{
+        type: String,
+        required: false
+    }],
     image: {
-        type: String
+        type: String,
+        required: false,
+        deprecated: true
     },
     likes: [{
         type: mongoose.Schema.Types.ObjectId,
@@ -45,5 +51,12 @@ postSchema.methods.updatePushWeight = async function() {
     this.pushWeight = 1 + (author.followers.length * 0.1);
     await this.save();
 };
+
+postSchema.virtual('displayImages').get(function() {
+    if (this.images && this.images.length > 0) {
+        return this.images;
+    }
+    return this.image ? [this.image] : [];
+});
 
 module.exports = mongoose.model('Post', postSchema); 
