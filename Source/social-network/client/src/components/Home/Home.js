@@ -452,7 +452,16 @@ const Home = () => {
     const [cacheMetrics, setCacheMetrics] = useState(null);
     const [isAdmin, setIsAdmin] = useState(false);
     const [user, setUser] = useState(null);
-    const [searchResults, setSearchResults] = useState({ posts: [], total: 0 });
+    const [searchResults, setSearchResults] = useState({ 
+        posts: [], 
+        total: 0, 
+        hasMore: false 
+    });
+    const [relatedResults, setRelatedResults] = useState({
+        relatedUsers: [],
+        authorPosts: [],
+        relatedPosts: []
+    });
     const [searchParams] = useSearchParams();
     const searchQuery = searchParams.get('q');
     const [activeTab, setActiveTab] = useState(searchQuery ? 'search' : 'feed');
@@ -913,13 +922,27 @@ const Home = () => {
         setLoading(true);
         try {
             const token = sessionStorage.getItem('token');
-            const response = await axios.get(
-                `http://localhost:5000/api/posts/search?query=${encodeURIComponent(query)}`,
-                {
-                    headers: { Authorization: `Bearer ${token}` }
-                }
-            );
-            setSearchResults(response.data);
+            
+            // 同时获取帖子搜索结果和相关推荐
+            const [postsResponse, relatedResponse] = await Promise.all([
+                // 保持原有的帖子搜索接口
+                axios.get(
+                    `http://localhost:5000/api/posts/search?query=${encodeURIComponent(query)}`,
+                    {
+                        headers: { Authorization: `Bearer ${token}` }
+                    }
+                ),
+                // 修改为正确的相关搜索接口路径
+                axios.get(
+                    `http://localhost:5000/api/search/results?q=${encodeURIComponent(query)}`,
+                    {
+                        headers: { Authorization: `Bearer ${token}` }
+                    }
+                )
+            ]);
+
+            setSearchResults(postsResponse.data);
+            setRelatedResults(relatedResponse.data);
             setActiveTab('search');
         } catch (error) {
             console.error('搜索失败:', error);
@@ -940,7 +963,7 @@ const Home = () => {
         } else {
             setActiveTab('feed');
             // 清空搜索结果
-            setSearchResults({ posts: [], total: 0 });
+            setSearchResults({ posts: [], total: 0, hasMore: false });
         }
     }, [searchQuery]);
 
@@ -1116,145 +1139,250 @@ const Home = () => {
                 
                 {searchQuery && (
                     <TabPane 
-                        tab={
-                            <span style={{ padding: '0 8px' }}>
-                                搜索: {searchQuery}
-                            </span>
-                        } 
+                        tab={`搜索结果: ${searchQuery}`}
                         key="search"
                     >
-                        <PostsList>
-                            {loading ? (
-                                <div style={{ textAlign: 'center', padding: '20px' }}>
-                                    <Spin />
-                                </div>
-                            ) : (
+                        <SearchResultsWrapper>
+                            {/* 主搜索结果：使用与全部动态相同的帖子样式 */}
+                            <PostsList>
                                 <List
-                                    dataSource={searchResults.posts || []}
-                                    renderItem={post => (
-                                        <PostCard key={post._id}>
-                                            <PostHeader>
-                                                <Avatar 
-                                                    src={getFullAvatarUrl(post.author?.avatar)} 
-                                                    icon={<UserOutlined />} 
-                                                />
-                                                <Link 
-                                                    to={`/profile/${post.author._id}`}
-                                                    className="username"
-                                                >
-                                                    {post.author?.username}
-                                                </Link>
-                                            </PostHeader>
-                                            
-                                            {post.images && post.images.length > 0 ? (
-                                                <CarouselWrapper>
-                                                    <Carousel
-                                                        dots={post.images.length > 1}
-                                                        infinite={true}
-                                                        speed={300}
-                                                        arrows={post.images.length > 1}
-                                                        draggable={true}
-                                                        touchThreshold={10}
-                                                        prevArrow={<LeftOutlined />}
-                                                        nextArrow={<RightOutlined />}
-                                                    >
-                                                        {post.images.map((image, index) => (
-                                                            <div key={index}>
-                                                                <PostImage>
-                                                                    <img
-                                                                        src={getFullImageUrl(image)}
-                                                                        alt={`Post image ${index + 1}`}
-                                                                        loading="lazy"
-                                                                    />
-                                                                </PostImage>
-                                                            </div>
-                                                        ))}
-                                                    </Carousel>
-                                                </CarouselWrapper>
-                                            ) : post.image ? (
-                                                <PostImage>
-                                                    <img
-                                                        src={getFullImageUrl(post.image)}
-                                                        alt="Post content"
-                                                        loading="lazy"
-                                                    />
-                                                </PostImage>
-                                            ) : null}
-
-                                            <PostActions>
-                                                <Space>
-                                                    <Button 
-                                                        type="text" 
-                                                        icon={post.likes.includes(user?._id) ? <LikeFilled /> : <LikeOutlined />}
-                                                        onClick={() => handleLike(post._id)}
-                                                    />
-                                                    <Button 
-                                                        type="text" 
-                                                        icon={<CommentOutlined />} 
-                                                    />
-                                                    <Button 
-                                                        type="text" 
-                                                        icon={post.savedBy.includes(user?._id) ? <SaveFilled /> : <SaveOutlined />}
-                                                        onClick={() => handleSave(post._id)}
-                                                    />
-                                                </Space>
-                                            </PostActions>
-                                            
-                                            <PostContent>
-                                                <div className="likes">
-                                                    {post.likes.length} 次赞
-                                                </div>
-                                                <div className="caption">
-                                                    <span className="username">{post.author?.username}</span>
-                                                    {post.content}
-                                                </div>
-                                                <div className="timestamp">
-                                                    {formatTime(post.createdAt)}
-                                                </div>
-                                            </PostContent>
-                                            
-                                            <CommentSection>
-                                                <CommentList>
-                                                    {post.comments.map((comment, index) => (
-                                                        <div key={`${post._id}-comment-${index}`} className="comment">
-                                                            <span className="username">{comment.user?.username || '未知用户'}</span>
-                                                            {comment.content}
-                                                        </div>
-                                                    ))}
-                                                </CommentList>
-                                                
-                                                <CommentInput>
-                                                    <TextArea
-                                                        value={commentContent[post._id] || ''}
-                                                        onChange={e => setCommentContent({
-                                                            ...commentContent,
-                                                            [post._id]: e.target.value
-                                                        })}
-                                                        placeholder="添加评论..."
-                                                        autoSize
-                                                    />
-                                                    <Button 
-                                                        type="link"
-                                                        onClick={() => handleComment(post._id)}
-                                                        loading={submitting}
-                                                    >
-                                                        发布
-                                                    </Button>
-                                                </CommentInput>
-                                            </CommentSection>
-                                        </PostCard>
+                                    dataSource={searchResults.posts}
+                                    loadMore={searchResults.hasMore && (
+                                        <div style={{ textAlign: 'center', margin: '12px 0' }}>
+                                            <Button onClick={loadMore} loading={loadingMore}>
+                                                加载更多
+                                            </Button>
+                                        </div>
                                     )}
                                     locale={{
-                                        emptyText: <Empty description="未找到相关内容" />
+                                        emptyText: <Empty description="未找到相关帖子" />
+                                    }}
+                                    renderItem={post => {
+                                        const { likes = [], comments = [], savedBy = [], author } = post;
+                                        return (
+                                            <PostCard key={post._id}>
+                                                <PostHeader>
+                                                    <Avatar src={getFullAvatarUrl(author.avatar)} />
+                                                    <span 
+                                                        className="username" 
+                                                        onClick={() => navigate(`/profile/${author._id}`)}
+                                                    >
+                                                        {author.username}
+                                                    </span>
+                                                    <span style={{ color: theme.colors.text.secondary, marginLeft: '8px' }}>
+                                                        {formatTime(post.createdAt)}
+                                                    </span>
+                                                </PostHeader>
+
+                                                {post.images && post.images.length > 0 ? (
+                                                    <CarouselWrapper>
+                                                        <Carousel
+                                                            dots={post.images.length > 1}
+                                                            infinite={true}
+                                                            speed={300}
+                                                            arrows={post.images.length > 1}
+                                                            draggable={true}
+                                                            touchThreshold={10}
+                                                            prevArrow={<LeftOutlined />}
+                                                            nextArrow={<RightOutlined />}
+                                                        >
+                                                            {post.images.map((image, index) => (
+                                                                <div key={index}>
+                                                                    <PostImage>
+                                                                        <img
+                                                                            src={getFullImageUrl(image)}
+                                                                            alt={`Post image ${index + 1}`}
+                                                                            loading="lazy"
+                                                                        />
+                                                                    </PostImage>
+                                                                </div>
+                                                            ))}
+                                                        </Carousel>
+                                                    </CarouselWrapper>
+                                                ) : post.image ? (
+                                                    <PostImage>
+                                                        <img
+                                                            src={getFullImageUrl(post.image)}
+                                                            alt="Post content"
+                                                            loading="lazy"
+                                                        />
+                                                    </PostImage>
+                                                ) : null}
+
+                                                <PostActions>
+                                                    <Space>
+                                                        <Button 
+                                                            type="text"
+                                                            icon={likes.includes(user?._id) ? <LikeFilled /> : <LikeOutlined />}
+                                                            onClick={() => handleLike(post._id)}
+                                                        >
+                                                            {likes.length}
+                                                        </Button>
+                                                        <Button 
+                                                            type="text"
+                                                            icon={<CommentOutlined />}
+                                                        >
+                                                            {comments.length}
+                                                        </Button>
+                                                        <Button 
+                                                            type="text"
+                                                            icon={savedBy.includes(user?._id) ? <SaveFilled /> : <SaveOutlined />}
+                                                            onClick={() => handleSave(post._id)}
+                                                        />
+                                                    </Space>
+                                                </PostActions>
+
+                                                <PostContent>
+                                                    <div className="likes">
+                                                        {likes.length} 次赞
+                                                    </div>
+                                                    <div className="caption">
+                                                        <span className="username">{author.username}</span>
+                                                        {post.content}
+                                                    </div>
+                                                    <div className="timestamp">
+                                                        {formatTime(post.createdAt)}
+                                                    </div>
+                                                </PostContent>
+
+                                                <CommentSection>
+                                                    <CommentList>
+                                                        {comments.map((comment, index) => (
+                                                            <div key={`${post._id}-comment-${index}`} className="comment">
+                                                                <span className="username">{comment.user?.username || '未知用户'}</span>
+                                                                {comment.content}
+                                                            </div>
+                                                        ))}
+                                                    </CommentList>
+                                                    <CommentInput>
+                                                        <TextArea
+                                                            value={commentContent[post._id] || ''}
+                                                            onChange={e => setCommentContent({
+                                                                ...commentContent,
+                                                                [post._id]: e.target.value
+                                                            })}
+                                                            placeholder="添加评论..."
+                                                            autoSize
+                                                        />
+                                                        <Button 
+                                                            type="link"
+                                                            onClick={() => handleComment(post._id)}
+                                                            loading={submitting}
+                                                        >
+                                                            发布
+                                                        </Button>
+                                                    </CommentInput>
+                                                </CommentSection>
+                                            </PostCard>
+                                        );
                                     }}
                                 />
+                            </PostsList>
+
+                            {/* 相关推荐部分 */}
+                            {relatedResults.relatedUsers?.length > 0 && (
+                                <RelatedSection>
+                                    <RelatedTitle>相关用户</RelatedTitle>
+                                    <UserList>
+                                        {relatedResults.relatedUsers.map(user => (
+                                            <UserItem 
+                                                key={user._id}
+                                                onClick={() => navigate(`/profile/${user._id}`)}
+                                            >
+                                                <Avatar src={getFullAvatarUrl(user.avatar)} />
+                                                <UserInfo>
+                                                    <Username>{user.username}</Username>
+                                                    <PostCount>{user.postsCount} 篇帖子</PostCount>
+                                                </UserInfo>
+                                            </UserItem>
+                                        ))}
+                                    </UserList>
+                                </RelatedSection>
                             )}
-                        </PostsList>
+
+                            {/* 相关帖子推荐 */}
+                            {relatedResults.relatedPosts?.length > 0 && (
+                                <RelatedSection>
+                                    <RelatedTitle>你可能感兴趣的帖子</RelatedTitle>
+                                    {relatedResults.relatedPosts.map(post => (
+                                        <PostCard key={post._id} style={{ marginBottom: '8px' }}>
+                                            <PostHeader>
+                                                <Avatar src={getFullAvatarUrl(post.author.avatar)} />
+                                                <span className="username">{post.author.username}</span>
+                                            </PostHeader>
+                                            <PostContent>
+                                                <div className="caption">{post.content}</div>
+                                            </PostContent>
+                                        </PostCard>
+                                    ))}
+                                </RelatedSection>
+                            )}
+                        </SearchResultsWrapper>
                     </TabPane>
                 )}
             </StyledTabs>
         </Container>
     );
 };
+
+// 新增样式组件
+const SearchResultsWrapper = styled.div`
+    padding: 16px 0;
+`;
+
+const ResultSection = styled.div`
+    margin-bottom: 24px;
+`;
+
+const RelatedSection = styled.div`
+    margin-top: 24px;
+    padding: 16px;
+    background: ${theme.colors.background};
+    border-radius: 8px;
+`;
+
+const RelatedTitle = styled.div`
+    font-size: 14px;
+    color: ${theme.colors.text.secondary};
+    margin-bottom: 16px;
+`;
+
+const UserList = styled.div`
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+`;
+
+const UserItem = styled.div`
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    
+    &:hover {
+        background: ${theme.colors.background};
+        border-radius: 8px;
+    }
+`;
+
+const UserInfo = styled.div`
+    margin-left: 12px;
+    flex: 1;
+`;
+
+const Username = styled.div`
+    font-weight: 500;
+    color: ${theme.colors.text.primary};
+    &:hover {
+        text-decoration: underline;
+    }
+`;
+
+const PostCount = styled.div`
+    font-size: 12px;
+    color: ${theme.colors.text.secondary};
+    margin-top: 2px;
+`;
 
 export default Home;

@@ -6,6 +6,8 @@ import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { theme } from '../../styles/theme';
 import debounce from 'lodash/debounce';
+import PostCard from '../Posts/PostCard';
+import UserCard from '../Profile/UserCard';
 
 const { Search } = Input;
 
@@ -100,6 +102,35 @@ const ViewAllButton = styled.div`
   }
 `;
 
+const SearchResultsContainer = styled.div`
+  padding: 16px;
+`;
+
+const ResultSection = styled.div`
+  margin-bottom: 24px;
+`;
+
+const SectionHeader = styled.div`
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid ${theme.colors.border};
+`;
+
+const RelatedSection = styled.div`
+  background: ${theme.colors.background};
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 16px;
+`;
+
+const RelatedHeader = styled.div`
+  font-size: 14px;
+  color: ${theme.colors.text.secondary};
+  margin-bottom: 12px;
+`;
+
 const SearchBar = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -148,8 +179,8 @@ const SearchBar = () => {
       setShowSuggestions(false);
       return;
     }
-    navigate(`/?q=${encodeURIComponent(value.trim())}`, { replace: true });
     setShowSuggestions(false);
+    navigate(`/?q=${encodeURIComponent(value.trim())}`, { replace: true });
   };
 
   // 处理清空
