@@ -56,7 +56,7 @@ const RightSidebar = styled.div`
   }
 `;
 
-const FriendSuggestions = styled.div`
+const SuggestedFollows = styled.div`
   background: white;
   padding: 16px;
   border-radius: 16px;
@@ -80,14 +80,25 @@ const SuggestionItem = styled.div`
   .user-info {
     display: flex;
     align-items: center;
+    flex: 1;
+    margin-right: 12px;
     
     .avatar {
       margin-right: 12px;
+      flex-shrink: 0;
     }
     
-    .username {
-      color: #000;
-      font-weight: 500;
+    .user-details {
+      .username {
+        color: ${theme.colors.text.primary};
+        font-weight: 500;
+      }
+      
+      .reason {
+        font-size: 12px;
+        color: ${theme.colors.text.secondary};
+        margin-top: 2px;
+      }
     }
   }
 `;
@@ -101,32 +112,47 @@ const SearchContainer = styled.div`
 `;
 
 const AppLayout = ({ children }) => {
-    const [suggestions, setSuggestions] = useState([]);
+    const [suggestedUsers, setSuggestedUsers] = useState([]);
 
     useEffect(() => {
-        const fetchSuggestions = async () => {
+        const fetchSuggestedUsers = async () => {
             try {
                 const token = sessionStorage.getItem('token');
                 const response = await axios.get('http://localhost:5000/api/users/suggestions', {
                     headers: { Authorization: `Bearer ${token}` }
                 });
-                setSuggestions(response.data);
+                setSuggestedUsers(response.data);
             } catch (error) {
-                console.error('获取推荐失败:', error);
+                console.error('获取推荐用户失败:', error);
             }
         };
-        fetchSuggestions();
+        fetchSuggestedUsers();
     }, []);
 
-    const handleSendRequest = async (userId) => {
+    const handleFollow = async (userId) => {
         try {
             const token = sessionStorage.getItem('token');
-            await axios.post(`http://localhost:5000/api/friends/request/${userId}`, {}, {
+            await axios.post(`http://localhost:5000/api/follow/${userId}`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            message.success('好友请求已发送');
+            message.success('关注成功');
+            // 从推荐列表中移除已关注的用户
+            setSuggestedUsers(prev => prev.filter(user => user._id !== userId));
         } catch (error) {
-            message.error('发送请求失败');
+            message.error('关注失败');
+        }
+    };
+
+    // 生成推荐理由的函数
+    const getRecommendReason = (user) => {
+        if (user.commonFollowers > 0) {
+            return `你关注的用户也关注了Ta`;
+        } else if (user.score > 8) {
+            return `活跃用户`;
+        } else if (user.postsCount > 5) {
+            return `经常分享有趣内容`;
+        } else {
+            return `你可能感兴趣的用户`;
         }
     };
 
@@ -141,31 +167,36 @@ const AppLayout = ({ children }) => {
                     <SearchContainer>
                         <SearchBar />
                     </SearchContainer>
-                    <FriendSuggestions>
-                        <h3>好友推荐</h3>
-                        {suggestions.map(user => (
+                    <SuggestedFollows>
+                        <h3>推荐关注</h3>
+                        {suggestedUsers.map(user => (
                             <SuggestionItem key={user._id}>
                                 <div className="user-info">
                                     <Avatar 
                                         className="avatar"
-                                        src={user.avatar}
+                                        size={40}
+                                        src={user.avatar && `http://localhost:5000/uploads/avatars/${user.avatar.split('/').pop()}`}
                                         icon={<UserOutlined />}
                                     />
-                                    <Link to={`/profile/${user._id}`} className="username">
-                                        {user.username}
-                                    </Link>
+                                    <div className="user-details">
+                                        <Link to={`/profile/${user._id}`} className="username">
+                                            {user.username}
+                                        </Link>
+                                        <div className="reason">
+                                            {getRecommendReason(user)}
+                                        </div>
+                                    </div>
                                 </div>
                                 <Button
                                     type="primary"
-                                    ghost
                                     size="small"
-                                    onClick={() => handleSendRequest(user._id)}
+                                    onClick={() => handleFollow(user._id)}
                                 >
-                                    添加好友
+                                    关注
                                 </Button>
                             </SuggestionItem>
                         ))}
-                    </FriendSuggestions>
+                    </SuggestedFollows>
                 </RightSidebar>
             </MainLayout>
         </StyledLayout>

@@ -117,29 +117,40 @@ class Neo4jService {
     
     while (retries > 0) {
         try {
-            // 确保数据是原始类型
+            // 确保数据是原始类型，并添加默认值
             const sanitizedData = {
                 userId: user._id.toString(),
                 username: user.username || '',
                 interests: Array.isArray(user.interests) ? user.interests : [],
-                activityScore: user.activityMetrics?.interactionFrequency || 0
+                activityScore: user.activityMetrics?.interactionFrequency || 0,
+                isOnline: false,
+                lastActiveAt: new Date().toISOString()
             };
 
+            // 修改 Cypher 查询，添加更多初始化属性
             await session.run(`
                 MERGE (u:User {userId: $userId})
                 SET u.username = $username,
                     u.interests = $interests,
                     u.activityScore = $activityScore,
-                    u.lastUpdated = datetime()
+                    u.isOnline = $isOnline,
+                    u.lastActiveAt = datetime($lastActiveAt),
+                    u.lastUpdated = datetime(),
+                    u.socialCircles = [],
+                    u.friendGroups = []
                 RETURN u
             `, sanitizedData);
 
-            break; // 成功后跳出重试循环
+            console.log('用户节点创建/更新成功:', user._id);
+            break;
         } catch (error) {
             console.error('同步用户到Neo4j失败 (剩余重试次数:', retries - 1, '):', error);
             retries--;
-            if (retries === 0) throw error;
-            await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒后重试
+            if (retries === 0) {
+                console.error('Neo4j同步最终失败，但不影响用户创建');
+                break; // 不抛出错误，让用户创建继续
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
         } finally {
             await session.close();
         }
@@ -510,20 +521,66 @@ class Neo4jService {
   async analyzeUserActivity(userId) {
     const session = this.driver.session();
     try {
-      const result = await session.run(`
-        MATCH (u:User {userId: $userId})-[r:FRIEND]-(friend)
-        WITH u, count(friend) as friendCount,
-             size((u)-[:INTERACTS]->()) as interactions
-        RETURN {
-          friendCount: friendCount,
-          interactionCount: interactions,
-          activityScore: friendCount * 0.3 + interactions * 0.7
-        } as activity
-      `, { userId });
-      
-      return result.records[0].get('activity');
+        // 1. 首先检查用户是否存在
+        const userCheck = await session.run(
+            'MATCH (u:User {userId: $userId}) RETURN u',
+            { userId }
+        );
+
+        if (userCheck.records.length === 0) {
+            console.log('用户在Neo4j中不存在，创建基础节点');
+            // 如果用户不存在，创建基础节点
+            await session.run(`
+                MERGE (u:User {userId: $userId})
+                SET u.activityScore = 0,
+                    u.lastActiveAt = datetime(),
+                    u.interactionCount = 0
+                RETURN u
+            `, { userId });
+        }
+
+        // 2. 获取用户活动数据
+        const result = await session.run(`
+            MATCH (u:User {userId: $userId})
+            OPTIONAL MATCH (u)-[r:INTERACTS]->()
+            WITH u, count(r) as interactionCount
+            OPTIONAL MATCH (u)-[:FRIEND]->(friend)
+            WITH u, interactionCount, count(friend) as friendCount
+            RETURN {
+                userId: u.userId,
+                activityScore: coalesce(u.activityScore, 0),
+                interactionCount: interactionCount,
+                friendCount: friendCount,
+                lastActiveAt: coalesce(u.lastActiveAt, datetime())
+            } as activity
+        `, { userId });
+
+        // 3. 确保返回默认值
+        const defaultActivity = {
+            userId: userId,
+            activityScore: 0,
+            interactionCount: 0,
+            friendCount: 0,
+            lastActiveAt: new Date().toISOString()
+        };
+
+        // 如果有记录则返回记录，否则返回默认值
+        return result.records.length > 0 
+            ? result.records[0].get('activity') 
+            : defaultActivity;
+
+    } catch (error) {
+        console.error('分析用户活动失败:', error);
+        // 返回默认值而不是抛出错误
+        return {
+            userId: userId,
+            activityScore: 0,
+            interactionCount: 0,
+            friendCount: 0,
+            lastActiveAt: new Date().toISOString()
+        };
     } finally {
-      await session.close();
+        await session.close();
     }
   }
 
@@ -951,4 +1008,18 @@ class Neo4jService {
   }
 }
 
-module.exports = Neo4jService;
+// 修改导出方式
+let instance = null;
+try {
+    instance = new Neo4jService();
+} catch (error) {
+    console.error('Neo4j 服务初始化失败:', error);
+    // 创建一个空的 mock 服务
+    instance = {
+        syncUserToNeo4j: async () => console.log('Neo4j 同步已跳过'),
+        syncFriendshipToNeo4j: async () => console.log('Neo4j 好友关系同步已跳过'),
+        // 添加其他需要的空方法
+    };
+}
+
+module.exports = instance;

@@ -20,13 +20,34 @@ const Register = () => {
     const onFinish = async (values) => {
         try {
             setLoading(true);
+            console.log('发送注册请求:', values);
+            
             const res = await axios.post('http://localhost:5000/api/users/register', values);
-            localStorage.setItem('token', res.data.token);
-            localStorage.setItem('user', JSON.stringify(res.data.user));
+            
+            console.log('注册响应:', res.data);
+            
+            if (!res.data.token || !res.data.sessionId || !res.data.user) {
+                throw new Error('注册返回数据不完整');
+            }
+
+            sessionStorage.setItem('token', res.data.token);
+            sessionStorage.setItem('sessionId', res.data.sessionId);
+            sessionStorage.setItem('user', JSON.stringify(res.data.user));
+            sessionStorage.setItem('tokenExpiry', new Date().getTime() + (24 * 60 * 60 * 1000));
+
             message.success('注册成功！');
-            navigate('/');
+            await navigate('/');
+            window.location.reload();
+
         } catch (error) {
-            message.error(error.response?.data?.message || '注册失败');
+            console.error('注册错误:', error);
+            if (error.response?.data?.message) {
+                message.error(error.response.data.message);
+            } else if (error.message) {
+                message.error(error.message);
+            } else {
+                message.error('注册失败，请稍后重试');
+            }
         } finally {
             setLoading(false);
         }

@@ -261,54 +261,20 @@ const Profile = () => {
         if (!userId) return;
         
         try {
-            const token = sessionStorage.getItem('token');
-            const sessionId = sessionStorage.getItem('sessionId');
-            let newFollowers = [];
-            let newFollowing = [];
+            const [followersRes, followingRes] = await Promise.all([
+                axios.get(`/follow/${userId}/followers`),
+                axios.get(`/follow/${userId}/following`)
+            ]);
 
-            if (canViewFollowers) {
-                const followersRes = await axios.get(
-                    `http://localhost:5000/api/follow/followers/${userId}`,
-                    { 
-                        headers: { 
-                            Authorization: `Bearer ${token}`,
-                            'Session-ID': sessionId
-                        }
-                    }
-                );
-                newFollowers = followersRes.data;
-            }
-
-            if (canViewFollowing) {
-                const followingRes = await axios.get(
-                    `http://localhost:5000/api/follow/following/${userId}`,
-                    { 
-                        headers: { 
-                            Authorization: `Bearer ${token}`,
-                            'Session-ID': sessionId
-                        }
-                    }
-                );
-                newFollowing = followingRes.data;
-            }
-
-            setFollowers(newFollowers);
-            setFollowing(newFollowing);
-
-            setProfileData(prev => prev && ({
-                ...prev,
-                statistics: {
-                    ...prev.statistics,
-                    followersCount: canViewFollowers ? newFollowers.length : '-',
-                    followingCount: canViewFollowing ? newFollowing.length : '-'
-                }
-            }));
+            setFollowers(followersRes.data);
+            setFollowing(followingRes.data);
         } catch (error) {
-            console.error('获取关注数据失败:', error);
-            setFollowers([]);
-            setFollowing([]);
+            if (!error.response || error.response.status !== 404) {
+                console.error('获取关注数据失败:', error);
+                message.error('获取关注数据失败');
+            }
         }
-    }, [userId, canViewFollowers, canViewFollowing]);
+    }, [userId]);
 
     const fetchProfileData = async () => {
         if (isDataFetching) return;
@@ -580,10 +546,10 @@ const Profile = () => {
     }, [navigate]);
 
     useEffect(() => {
-        if (profileData) {
+        if (userId) {
             fetchFollowData();
         }
-    }, [fetchFollowData, profileData]);
+    }, [userId]);
 
     useEffect(() => {
         fetchProfileData();
@@ -780,10 +746,7 @@ const Profile = () => {
                         <FollowList 
                             users={followers}
                             type="followers"
-                            onUpdate={async () => {
-                                await fetchFollowData();
-                                await fetchProfileData();
-                            }}
+                            onUpdate={fetchProfileData}
                             currentUserId={currentUserId}
                             isOwnProfile={!userId || currentUserId === profileData?._id}
                         />
@@ -794,10 +757,7 @@ const Profile = () => {
                         <FollowList 
                             users={following}
                             type="following"
-                            onUpdate={async () => {
-                                await fetchFollowData();
-                                await fetchProfileData();
-                            }}
+                            onUpdate={fetchProfileData}
                             currentUserId={currentUserId}
                         />
                     </TabPane>
@@ -869,7 +829,7 @@ const Profile = () => {
                                         {selectedPost.content}
                                     </div>
                                 )}
-                                {/* 这里可以添加评论等其他内容 */}
+                                {/* 这里以添加评论等其他内容 */}
                             </PostContent>
                         </PostDetailsSection>
                     </PostModalWrapper>

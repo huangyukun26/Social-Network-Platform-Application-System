@@ -472,6 +472,7 @@ const Home = () => {
     const [searchParams] = useSearchParams();
     const searchQuery = searchParams.get('q');
     const [activeTab, setActiveTab] = useState(searchQuery ? 'search' : 'feed');
+    const [suggestedUsers, setSuggestedUsers] = useState([]);
     
     useEffect(() => {
         const token = sessionStorage.getItem('token');
@@ -818,44 +819,6 @@ const Home = () => {
         }
     };
 
-    // 添加性能指标显示组件
-    const renderPerformanceMetrics = () => {
-        if (!isAdmin || !cacheMetrics) return null;
-
-        return (
-            <PerformanceCard>
-                <Row gutter={16}>
-                    <Col span={6}>
-                        <Statistic
-                            title="缓存命中率"
-                            value={cacheMetrics.hitRate}
-                            suffix="%"
-                            precision={2}
-                        />
-                    </Col>
-                    <Col span={6}>
-                        <Statistic
-                            title="平均延迟"
-                            value={cacheMetrics.averageLatency}
-                            suffix="ms"
-                        />
-                    </Col>
-                    <Col span={6}>
-                        <Statistic
-                            title="缓存请求总数"
-                            value={cacheMetrics.totalRequests}
-                        />
-                    </Col>
-                    <Col span={6}>
-                        <Statistic
-                            title="缓存键数量"
-                            value={cacheMetrics.keysCount}
-                        />
-                    </Col>
-                </Row>
-            </PerformanceCard>
-        );
-    };
 
     const handleProfileClick = (userId) => {
         const token = sessionStorage.getItem('token');
@@ -991,6 +954,16 @@ const Home = () => {
             });
         }
     }, [searchQuery]);
+
+    // 获取推荐用户
+    const fetchSuggestedUsers = async () => {
+        try {
+            const { data } = await axios.get('/api/users/suggestions');
+            setSuggestedUsers(data);
+        } catch (error) {
+            console.error('获取推荐用户失败:', error);
+        }
+    };
 
     return (
         <Container>
@@ -1726,6 +1699,32 @@ const PostCount = styled.div`
     font-size: 12px;
     color: ${theme.colors.text.secondary};
     margin-top: 2px;
+`;
+
+const SuggestedUserCard = styled.div`
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    cursor: pointer;
+    
+    &:hover {
+        background: ${theme.colors.background};
+    }
+    
+    .user-info {
+        margin-left: 12px;
+        flex: 1;
+    }
+    
+    .username {
+        font-weight: 600;
+        color: ${theme.colors.text.primary};
+    }
+    
+    .stats {
+        font-size: 12px;
+        color: ${theme.colors.text.secondary};
+    }
 `;
 
 export default Home;

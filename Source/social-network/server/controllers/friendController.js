@@ -1,12 +1,19 @@
 const FriendRequest = require('../models/FriendRequest');
 const User = require('../models/User');
 const redisClient = require('../utils/RedisClient');
-const Neo4jService = require('../services/neo4jService');
+const neo4jService = require('../services/neo4jService');
 const DataSyncService = require('../services/DataSyncService');
 const FriendGroup = require('../models/FriendGroup');
 
-const neo4jService = new Neo4jService();
-const dataSyncService = new DataSyncService();
+// 添加安全的 Neo4j 操作包装器
+const safeNeo4jOp = async (operation, fallback = null) => {
+    try {
+        return await operation();
+    } catch (error) {
+        console.error('Neo4j 操作失败:', error);
+        return fallback;
+    }
+};
 
 const friendController = {
     // 提取公共的请求格式化方法
@@ -129,8 +136,9 @@ const friendController = {
                     User.findByIdAndUpdate(request.sender._id, {
                         $addToSet: { friends: req.userId }
                     }),
-                    neo4jService.addFriendship(req.userId, request.sender._id.toString())
-                        .catch(error => console.error('Neo4j同步失败:', error))
+                    safeNeo4jOp(() => 
+                        neo4jService.addFriendship(req.userId, request.sender._id.toString())
+                    )
                 ]);
 
                 await friendController._clearFriendshipCaches([
@@ -162,29 +170,29 @@ const friendController = {
     getFriendSuggestions: async (req, res) => {
         try {
             const userId = req.userId;
-
-            // 尝试从缓存获取
             const cachedSuggestions = await redisClient.getFriendSuggestions(userId);
+            
             if (cachedSuggestions) {
                 return res.json(cachedSuggestions);
             }
 
-            // 获取Neo4j的推荐
-            const recommendations = await neo4jService.recommendFriends(userId);
-            
+            // 使用安全包装器获取推荐
+            const recommendations = await safeNeo4jOp(
+                () => neo4jService.recommendFriends(userId),
+                []  // 如果失败返回空数组
+            );
+
             if (!recommendations || recommendations.length === 0) {
-                // 如果没有基于关系的推荐，使用基础推荐
+                // 降级到基础推荐逻辑
                 const basicSuggestions = await User.find({
                     _id: { $ne: userId },
                     'privacy.profileVisibility': { $ne: 'private' },
-                    // 确保不是已经是好友的用户
                     _id: { $nin: (await User.findById(userId)).friends }
                 })
                 .select('username avatar bio statistics')
                 .limit(10)
                 .lean();
 
-                // 缓存基础推荐
                 if (basicSuggestions.length > 0) {
                     await redisClient.setFriendSuggestions(userId, basicSuggestions);
                     return res.json(basicSuggestions);
@@ -196,7 +204,7 @@ const friendController = {
             res.json(recommendations);
         } catch (error) {
             console.error('获取好友推荐失败:', error);
-            res.json([]); // 出错时返回空数组
+            res.status(500).json({ message: '获取推荐失败' });
         }
     },
 
@@ -873,7 +881,7 @@ const friendController = {
                 lastActive: new Date()
             });
 
-            // 清除相��的好友在线状态缓存
+            // 清除相的好友在线状态缓存
             const user = await User.findById(userId);
             for (const friendId of user.friends) {
                 await redisClient.invalidateFriendCache(friendId.toString());

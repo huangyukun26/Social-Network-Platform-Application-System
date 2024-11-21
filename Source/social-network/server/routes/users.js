@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const RedisClient = require('../utils/RedisClient');
 const neo4jService = require('../services/neo4jService');
+const mongoose = require('mongoose');
 
 // 配置 multer 存储
 const storage = multer.diskStorage({
@@ -162,19 +163,101 @@ router.get('/me', auth, async (req, res) => {
 // 3. 其他特定路由
 router.get('/suggestions', auth, async (req, res) => {
     try {
-        const currentUser = await User.findById(req.userId);
+        const currentUser = await User.findById(req.userId)
+            .populate('following')
+            .populate('interactions.targetUser');
         
-        // 获取未关注的用户(排除自己和已关注的用户)
-        const suggestions = await User.find({
-            _id: { 
-                $nin: [
-                    req.userId,
-                    ...currentUser.following
-                ]
+        // 构建排除列表 - 当前用户和已关注的用户
+        const excludeIds = [
+            new mongoose.Types.ObjectId(req.userId),
+            ...(currentUser.following || []).map(f => f._id)
+        ];
+
+        // 获取用户的互动记录
+        const interactionUsers = currentUser.interactions?.map(i => i.targetUser._id) || [];
+        
+        // 聚合查询推荐用户
+        const suggestions = await User.aggregate([
+            {
+                $match: {
+                    _id: { $nin: excludeIds },
+                    'privacy.profileVisibility': { $ne: 'private' }
+                }
+            },
+            {
+                $addFields: {
+                    score: {
+                        $add: [
+                            // 1. 互动分数
+                            {
+                                $cond: [
+                                    { $in: ['$_id', interactionUsers] },
+                                    10,
+                                    0
+                                ]
+                            },
+                            // 2. 共同关注分数 - 添加空值检查
+                            {
+                                $cond: [
+                                    { $isArray: '$following' },
+                                    {
+                                        $size: {
+                                            $setIntersection: [
+                                                { $ifNull: ['$following', []] },
+                                                { $ifNull: [currentUser.following || [], []] }
+                                            ]
+                                        }
+                                    },
+                                    0
+                                ]
+                            },
+                            // 3. 活跃度分数 - 添加空值检查
+                            {
+                                $cond: [
+                                    { $and: [
+                                        { $isNumber: '$activityMetrics.postFrequency' },
+                                        { $ne: ['$activityMetrics.postFrequency', null] }
+                                    ]},
+                                    { $divide: ['$activityMetrics.postFrequency', 10] },
+                                    0
+                                ]
+                            },
+                            // 4. 粉丝数量分数 - 添加空值检查
+                            {
+                                $cond: [
+                                    { $isArray: '$followers' },
+                                    { $divide: [{ $size: { $ifNull: ['$followers', []] } }, 100] },
+                                    0
+                                ]
+                            }
+                        ]
+                    }
+                }
+            },
+            { $sort: { score: -1 } },
+            { $limit: 5 },
+            {
+                $project: {
+                    username: 1,
+                    avatar: 1,
+                    bio: 1,
+                    followersCount: {
+                        $cond: [
+                            { $isArray: '$followers' },
+                            { $size: { $ifNull: ['$followers', []] } },
+                            0
+                        ]
+                    },
+                    postsCount: {
+                        $cond: [
+                            { $isArray: '$posts' },
+                            { $size: { $ifNull: ['$posts', []] } },
+                            0
+                        ]
+                    }
+                }
             }
-        })
-        .select('username avatar bio')
-        .limit(5); // 限制返回5个推荐
+        ]);
 
         res.json(suggestions);
     } catch (error) {
@@ -341,16 +424,12 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ message: '用户名或邮箱已存在' });
         }
 
-        // 创建新用户
+        // 创建新用户 - 移除手动加密步骤
         user = new User({
             username,
             email,
-            password
+            password  // 密码会在 pre-save 中间件中自动加密
         });
-
-        // 加密密码
-        const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(password, salt);
 
         await user.save();
 
@@ -361,20 +440,20 @@ router.post('/register', async (req, res) => {
             { expiresIn: '24h' }
         );
 
+        // 即使 Neo4j 同步失败，也返回成功响应
         res.status(201).json({
             token,
+            sessionId: user._id,
             user: {
                 _id: user._id,
                 username: user.username,
                 email: user.email,
-                avatar: user.avatar,
-                createdAt: user.createdAt
+                role: user.role
             }
         });
-
     } catch (error) {
-        console.error('注册错误:', error);
-        res.status(500).json({ message: '服务器错误' });
+        console.error('注册失败:', error);
+        res.status(500).json({ message: '注册失败，请稍后重试' });
     }
 });
 
@@ -539,6 +618,22 @@ router.put('/friendship/:friendId', auth, async (req, res) => {
     res.status(500).json({ message: '更新关系失败' });
   }
 });
+
+
+/*
+// 获取关注状态
+router.get('/follow/status/:userId', auth, async (req, res) => {
+    try {
+        const currentUser = await User.findById(req.userId);
+        const isFollowing = currentUser.following.includes(req.params.userId);
+        res.json({ isFollowing });
+    } catch (error) {
+        console.error('获取关注状态失败:', error);
+        res.status(500).json({ message: '获取关注状态失败' });
+    }
+});
+*/
+
 
 // 导出路由
 module.exports = router; 

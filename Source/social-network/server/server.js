@@ -92,11 +92,15 @@ const cacheMonitorRoutes = require('./routes/admin/cache-monitor');
 const messageRoutes = require('./routes/messageRoutes');
 const searchRoutes = require('./routes/search');
 
-// 注册路由
+// 注册路由 - 只保留一次注册，并添加日志中间件
+app.use('/api/follow', (req, res, next) => {
+    console.log('Follow路由访问:', req.method, req.path);
+    next();
+}, followRoutes);
+
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/friends', friendRoutes);
-app.use('/api/follow', followRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cache', cacheMonitorRoutes);
 app.use('/api/messages', messageRoutes);
