@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Input, Spin, Empty, Avatar } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { SearchOutlined, UserOutlined } from '@ant-design/icons';
 import styled from 'styled-components';
 import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -211,6 +211,14 @@ const SearchBar = () => {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
+  // 首先添加一个处理头像URL的函数
+  const getFullAvatarUrl = (avatarPath) => {
+    if (!avatarPath) return null;
+    return avatarPath.startsWith('http') 
+        ? avatarPath 
+        : `http://localhost:5000${avatarPath}`;
+  };
+
   return (
     <SearchContainer className="search-container">
       <Search
@@ -244,7 +252,11 @@ const SearchBar = () => {
                         setShowSuggestions(false);
                       }}
                     >
-                      <Avatar src={user.avatar} size="small" />
+                      <Avatar 
+                        src={getFullAvatarUrl(user.avatar)} 
+                        size="small" 
+                        icon={!user.avatar && <UserOutlined />}
+                      />
                       <div className="user-info">
                         <div className="username">{user.username}</div>
                         <div className="posts-count">{user.postsCount} 篇帖子</div>

@@ -895,7 +895,6 @@ const Home = () => {
             
             // 同时获取帖子搜索结果和相关推荐
             const [postsResponse, relatedResponse] = await Promise.all([
-                // 修改帖子搜索接口，确保返回完整的用户和评论信息
                 axios.get(
                     `http://localhost:5000/api/posts/search?query=${encodeURIComponent(query)}`,
                     {
@@ -919,12 +918,12 @@ const Home = () => {
                 }))
             }));
 
-            // 处理相��用户数据
+            // 处理相关用户数据 - 使用后端返回的统计数据
             const processedUsers = relatedResponse.data.relatedUsers.map(user => ({
                 ...user,
-                postsCount: user.posts?.length || 0,
-                friendsCount: user.friends?.length || 0,
-                followersCount: user.followers?.length || 0
+                postsCount: user.statistics?.postsCount || 0,
+                friendsCount: user.statistics?.friendsCount || 0,
+                followersCount: user.statistics?.followersCount || 0
             }));
 
             setSearchState({
@@ -1617,7 +1616,7 @@ const Home = () => {
                                                 <Avatar src={getFullAvatarUrl(user.avatar)} />
                                                 <UserInfo>
                                                     <Username>{user.username}</Username>
-                                                    <PostCount>{user.postsCount} 篇帖子</PostCount>
+                                                    <PostCount>{user.statistics?.postsCount || 0} 篇帖子</PostCount>
                                                 </UserInfo>
                                             </UserItem>
                                         ))}

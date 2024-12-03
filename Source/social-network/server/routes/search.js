@@ -11,12 +11,42 @@ router.get('/suggestions', auth, async (req, res) => {
         const { q } = req.query;
         if (!q) return res.json({ users: [], posts: [] });
 
-        // 搜索用户
-        const users = await User.find({
-            username: { $regex: q, $options: 'i' }
-        })
-        .select('username avatar postsCount')
-        .limit(3);
+        // 搜索用户并获取帖子数量
+        const users = await User.aggregate([
+            {
+                $match: {
+                    username: { $regex: q, $options: 'i' }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'posts',
+                    let: { userId: '$_id' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $eq: ['$author', '$$userId'] },
+                                        { $eq: ['$isDeleted', false] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    as: 'posts'
+                }
+            },
+            {
+                $project: {
+                    _id: 1,
+                    username: 1,
+                    avatar: 1,
+                    postsCount: { $size: '$posts' }
+                }
+            },
+            { $limit: 3 }
+        ]);
 
         // 搜索帖子并计算相关性得分
         const posts = await Post.aggregate([
@@ -154,6 +184,11 @@ const getRelatedPosts = async (q, exactMatches, currentUser) => {
         { $limit: 10 }
     ]);
 
+    // 在返回结果前填充评论用户信息
+    await Post.populate(relatedPosts, [
+        { path: 'comments.user', select: 'username avatar' }
+    ]);
+
     return relatedPosts;
 };
 
@@ -228,14 +263,78 @@ router.get('/results', auth, async (req, res) => {
 
         results.exactMatches = exactMatches;
 
-        // 查找相关用户
-        const relatedUsers = await User.find({
-            username: { $regex: q, $options: 'i' }
-        })
-        .select('username avatar postsCount')
-        .limit(5);
+        // 修改相关用户查询
+        const relatedUsers = await User.aggregate([
+            {
+                $match: {
+                    username: { $regex: q, $options: 'i' }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'posts',
+                    let: { userId: '$_id' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $eq: ['$author', '$$userId'] },
+                                        { $eq: ['$isDeleted', false] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    as: 'userPosts'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'friends',
+                    foreignField: '_id',
+                    as: 'friendsList'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'followers',
+                    foreignField: '_id',
+                    as: 'followersList'
+                }
+            },
+            {
+                $project: {
+                    _id: 1,
+                    username: 1,
+                    avatar: 1,
+                    bio: 1,
+                    postsCount: { $size: '$userPosts' },
+                    friendsCount: { $size: '$friendsList' },
+                    followersCount: { $size: '$followersList' },
+                    isPrivate: { 
+                        $cond: [
+                            { $eq: ['$privacy.profileVisibility', 'private'] },
+                            true,
+                            false
+                        ]
+                    }
+                }
+            },
+            { $limit: 5 }
+        ]);
 
-        results.relatedUsers = relatedUsers;
+        // 确保返回的数据格式正确
+        results.relatedUsers = relatedUsers.map(user => ({
+            ...user,
+            statistics: {
+                postsCount: user.postsCount,
+                friendsCount: user.friendsCount,
+                followersCount: user.followersCount
+            }
+        }));
 
         // 获取相关帖子
         const relatedPosts = await getRelatedPosts(q, exactMatches, currentUser);
