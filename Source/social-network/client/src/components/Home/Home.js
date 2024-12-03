@@ -886,7 +886,7 @@ const Home = () => {
         </Menu>
     );
 
-    // 优化搜索函数
+    // 修改搜索函数
     const fetchSearchResults = async (query) => {
         if (!query) return;
         setSearchState(prev => ({ ...prev, loading: true, error: null }));
@@ -895,14 +895,13 @@ const Home = () => {
             
             // 同时获取帖子搜索结果和相关推荐
             const [postsResponse, relatedResponse] = await Promise.all([
-                // 保持原有的帖子搜索接口
+                // 修改帖子搜索接口，确保返回完整的用户和评论信息
                 axios.get(
                     `http://localhost:5000/api/posts/search?query=${encodeURIComponent(query)}`,
                     {
                         headers: { Authorization: `Bearer ${token}` }
                     }
                 ),
-                // 修改为正确的相关搜索接口路径
                 axios.get(
                     `http://localhost:5000/api/search/results?q=${encodeURIComponent(query)}`,
                     {
@@ -911,12 +910,30 @@ const Home = () => {
                 )
             ]);
 
+            // 处理搜索结果中的帖子数据
+            const processedPosts = postsResponse.data.posts.map(post => ({
+                ...post,
+                comments: post.comments.map(comment => ({
+                    ...comment,
+                    user: comment.user || { username: '未知用户' }
+                }))
+            }));
+
+            // 处理相��用户数据
+            const processedUsers = relatedResponse.data.relatedUsers.map(user => ({
+                ...user,
+                postsCount: user.posts?.length || 0,
+                friendsCount: user.friends?.length || 0,
+                followersCount: user.followers?.length || 0
+            }));
+
             setSearchState({
                 loading: false,
                 error: null,
                 results: {
                     ...relatedResponse.data,
-                    searchPosts: postsResponse.data.posts
+                    searchPosts: processedPosts,
+                    relatedUsers: processedUsers
                 }
             });
             

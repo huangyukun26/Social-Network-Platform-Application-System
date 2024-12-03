@@ -94,8 +94,13 @@ router.get('/:userId/followers', auth, async (req, res) => {
 // 获取关注状态
 router.get('/status/:userId', auth, async (req, res) => {
     try {
-        const currentUser = await User.findById(req.userId);
-        const isFollowing = currentUser.following.includes(req.params.userId);
+        const currentUser = await User.findById(req.userId)
+            .populate('following', '_id');
+        
+        // 检查目标用户是否在当前用户的关注列表中
+        const isFollowing = currentUser.following.some(
+            user => user._id.toString() === req.params.userId
+        );
         
         res.json({ isFollowing });
     } catch (error) {

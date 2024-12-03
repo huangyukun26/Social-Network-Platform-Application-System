@@ -390,6 +390,7 @@ const Profile = () => {
             // 只有在查看他人主页时才获取关系状态
             if (userId && userId !== userData._id) {
                 try {
+                    // 获取好友状态
                     const statusResponse = await axios.get(
                         `http://localhost:5000/api/friends/status/${userId}`,
                         { 
@@ -400,17 +401,10 @@ const Profile = () => {
                         }
                     );
                     setFriendshipStatus(statusResponse.data.status);
-                    if (statusResponse.data.direction === 'received') {
-                        setFriendshipStatus('received');
-                    }
-                } catch (error) {
-                    console.log('获取好友状态失败:', error);
-                    setFriendshipStatus('none');
-                }
-
-                try {
+                    
+                    // 获取关注状态 - 修改这部分逻辑
                     const followResponse = await axios.get(
-                        `http://localhost:5000/api/follow/status/${userId}`,
+                        `http://localhost:5000/api/follow/${userId}/status`,
                         { 
                             headers: { 
                                 Authorization: `Bearer ${token}`,
@@ -418,9 +412,15 @@ const Profile = () => {
                             }
                         }
                     );
-                    setIsFollowing(followResponse.data.isFollowing);
+                    
+                    // 直接从关注列表中检查
+                    const isUserFollowing = followResponse.data.isFollowing || 
+                        following.some(f => f._id === currentUserId);
+                    setIsFollowing(isUserFollowing);
+
                 } catch (error) {
-                    console.log('获取关注状态失败:', error);
+                    console.error('获取关系状态失败:', error);
+                    setFriendshipStatus('none');
                     setIsFollowing(false);
                 }
             }
@@ -594,6 +594,16 @@ const Profile = () => {
         }
     }, [userId, currentUserId]);
 
+    // 添加新的 useEffect
+    useEffect(() => {
+        // 如果是查看他人主页，且 following 数组已加载
+        if (userId && userId !== currentUserId && following.length > 0) {
+            // 检查当前用户是否在 following 列表中
+            const isUserFollowing = following.some(f => f._id === currentUserId);
+            setIsFollowing(isUserFollowing);
+        }
+    }, [userId, currentUserId, following]);
+
     // 7. 渲染逻辑
     if (loading) {
         return (
@@ -683,7 +693,7 @@ const Profile = () => {
                                         type={isFollowing ? 'default' : 'primary'}
                                         onClick={handleFollow}
                                     >
-                                        {isFollowing ? '取消关注' : '关注'}
+                                        {isFollowing ? '已关注' : '关注'}
                                     </Button>
                                 </>
                             )}
