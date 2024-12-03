@@ -1,85 +1,304 @@
 import React, { useState } from 'react';
-import { Form, message, Card, Divider, Button, Modal } from 'antd';
+import { Form, message, Modal, Button, Input } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from '../../utils/axios';
-import {
-    AuthContainer,
-    StyledForm,
-    StyledInput,
-    StyledPassword,
-    StyledButton,
-    AuthLink,
-    LogoContainer,
-    AuthCard,
-    AppStoreButtons,
-    AppStoreButton,
-    GetAppText,
-    ButtonContent,
-    ButtonOverlay
-} from '../../styles/authStyles';
-import logoImage from '../../assert/LOGO.png';  
-import XIAZAIImage from '../../assert/xiazai.png';
+import styled from 'styled-components';
 
-// 新增 Logo 组件
-const Logo = () => (
-    <LogoContainer>
-        <img 
-            src={logoImage} 
-            alt="Logo" 
-            style={{ 
-                height: '150px', 
-                width: 'auto',  
-                margin: '20px 0'
-            }} 
-        />
-    </LogoContainer>
-);
+// 新的样式组件
+const PageContainer = styled.div`
+  display: flex;
+  min-height: 100vh;
+  background: #fff;
+`;
 
-// 新增下载按钮组件
-const DownloadButton = ({ image, storeName }) => (
-    <AppStoreButton>
-        <ButtonContent>
-            <img 
-                src={image}
-                alt={storeName} 
-                style={{ 
-                    height: '35px',
-                    width: 'auto',
-                    objectFit: 'contain',
-                    filter: 'brightness(1.1) contrast(1.1)',
-                    transition: 'transform 0.2s ease'
-                }} 
-            />
-            <ButtonOverlay />
-        </ButtonContent>
-    </AppStoreButton>
-);
+const LeftPanel = styled.div`
+  flex: 1;
+  background: #00a884;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(45deg, #00a884, #00cf9d);
+    opacity: 0.8;
+    animation: gradientMove 10s ease infinite;
+  }
+
+  @keyframes gradientMove {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+`;
+
+const NetworkBackground = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0.1;
+  background-image: radial-gradient(circle at 2px 2px, #fff 1px, transparent 0);
+  background-size: 40px 40px;
+  animation: moveBackground 60s linear infinite;
+
+  @keyframes moveBackground {
+    0% {
+      transform: translateY(0);
+    }
+    100% {
+      transform: translateY(-50%);
+    }
+  }
+`;
+
+const BrandLogo = styled.div`
+  font-size: 48px;
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 24px;
+  z-index: 1;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+`;
+
+const WelcomeText = styled.h1`
+  font-size: 64px;
+  color: #fff;
+  z-index: 1;
+  text-align: center;
+  line-height: 1.2;
+  margin-bottom: 20px;
+  font-weight: 600;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+  opacity: 0;
+  transform: translateY(20px);
+  animation: fadeInUp 0.8s ease forwards;
+
+  @keyframes fadeInUp {
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+`;
+
+const RightPanel = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: #fff;
+`;
+
+const FormContainer = styled.div`
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+`;
+
+const Logo = styled.div`
+  font-size: 40px;
+  font-weight: bold;
+  color: #00a884;
+  margin-bottom: 48px;
+`;
+
+const FormTitle = styled.h2`
+  font-size: 32px;
+  margin-bottom: 32px;
+  color: #1a1a1a;
+`;
+
+const InputWrapper = styled.div`
+  margin-bottom: 24px;
+  width: 100%;
+  padding: 2px;
+  
+  .ant-input, .ant-input-password {
+    height: 50px;
+    border-radius: 25px;
+    border: 2px solid #e6e6e6;
+    padding: 0 24px;
+    font-size: 16px;
+    background: #f8f9fa;
+    transition: all 0.3s ease;
+    
+    &:focus, &:hover {
+      border-color: #00a884;
+      box-shadow: 0 0 0 2px rgba(0, 168, 132, 0.1);
+      background: #fff;
+    }
+  }
+
+  .ant-input-affix-wrapper {
+    padding: 0 11px 0 24px;
+    border-radius: 25px;
+    border: 2px solid #e6e6e6;
+    background: #f8f9fa;
+    transition: all 0.3s ease;
+
+    &:focus, &:hover, &-focused {
+      border-color: #00a884;
+      box-shadow: 0 0 0 2px rgba(0, 168, 132, 0.1);
+      background: #fff;
+    }
+
+    .ant-input {
+      height: 46px;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      padding: 0;
+
+      &:focus {
+        box-shadow: none;
+      }
+    }
+
+    .ant-input-prefix {
+      margin-right: 12px;
+      color: #00a884;
+    }
+
+    .ant-input-suffix {
+      margin-left: 12px;
+      color: #00a884;
+    }
+  }
+
+  .ant-form-item {
+    margin-bottom: 0;
+  }
+`;
+
+const LoginButton = styled(Button)`
+  width: 100%;
+  height: 50px;
+  border-radius: 25px;
+  font-size: 16px;
+  font-weight: bold;
+  background: #00a884;
+  border: none;
+  margin-top: 12px;
+  
+  &:hover, &:focus {
+    background: #008f6c;
+  }
+`;
+
+const SignUpText = styled.div`
+  margin-top: 24px;
+  text-align: center;
+  font-size: 16px;
+  width: 100%;
+  max-width: 400px;
+  padding: 16px;
+  border-top: 1px solid #f0f0f0;
+  
+  a {
+    color: #00a884;
+    font-weight: bold;
+    margin-left: 8px;
+    
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+`;
+
+// 添加 StyledForm 定义
+const StyledForm = styled(Form)`
+  width: 100%;
+`;
+
+// 添加打字机效果组件
+const TypewriterText = styled.div`
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.9);
+  z-index: 1;
+  margin-top: 24px;
+  font-weight: 300;
+  text-align: center;
+  min-height: 60px;
+  
+  .typing {
+    display: inline-block;
+    overflow: hidden;
+    white-space: nowrap;
+    border-right: 2px solid #fff;
+    animation: typing 3.5s steps(40, end),
+               blink-caret 0.75s step-end infinite;
+    margin: 0 auto;
+  }
+
+  @keyframes typing {
+    from { width: 0 }
+    to { width: 100% }
+  }
+
+  @keyframes blink-caret {
+    from, to { border-color: transparent }
+    50% { border-color: #fff }
+  }
+`;
+
+// 添加环形动画背景
+const CircleBackground = styled.div`
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  top: -50%;
+  left: -50%;
+  background: radial-gradient(circle at center, transparent 30%, rgba(255,255,255,0.1) 70%);
+  transform: rotate(0deg);
+  animation: rotate 60s linear infinite;
+  z-index: 0;
+
+  @keyframes rotate {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+`;
 
 const Login = () => {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
-    
-    // 从 localStorage 初始化错误信息
-    const [debugInfo, setDebugInfo] = useState(() => {
-        const savedError = localStorage.getItem('loginError');
-        return savedError ? JSON.parse(savedError) : {
-            requestData: null,
-            responseData: null,
-            error: null
-        };
+    const [debugInfo, setDebugInfo] = useState({
+        requestData: null,
+        responseData: null,
+        error: null
+    });
+    const [errorModal, setErrorModal] = useState({
+        visible: false,
+        title: '',
+        content: {}
     });
 
-    // 添加错误模态框状态
-    const [errorModal, setErrorModal] = useState(() => {
-        const savedModal = localStorage.getItem('loginErrorModal');
-        return savedModal ? JSON.parse(savedModal) : {
-            visible: false,
-            title: '',
-            content: {}
-        };
-    });
-
+    // 保持原有的 onFinish 处理函数不变
     const onFinish = async (values) => {
         const deviceInfo = {
             userAgent: navigator.userAgent,
@@ -221,134 +440,74 @@ const Login = () => {
         }
     };
 
-    // 添加清除错误信息的函数
-    const clearError = () => {
-        localStorage.removeItem('loginError');
-        localStorage.removeItem('loginErrorModal');
-        setDebugInfo({ requestData: null, responseData: null, error: null });
-        setErrorModal({ visible: false, title: '', content: {} });
-    };
-
     return (
-        <AuthContainer>
-            <div style={{ maxWidth: '350px', width: '100%' }}>
-                {/* 错误信息固定展示区 */}
-                {debugInfo.error && (
-                    <Card 
-                        size="small" 
-                        title={
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span>登录错误信息</span>
-                                <Button type="link" onClick={clearError}>清除</Button>
-                            </div>
-                        }
-                        style={{ 
-                            marginBottom: '20px',
-                            backgroundColor: '#fff2f0',
-                            borderColor: '#ffccc7'
-                        }}
-                    >
-                        <pre style={{ 
-                            fontSize: '12px',
-                            whiteSpace: 'pre-wrap',
-                            wordWrap: 'break-word'
-                        }}>
-                            {JSON.stringify(debugInfo.error, null, 2)}
-                        </pre>
-                    </Card>
-                )}
+        <PageContainer>
+            <LeftPanel>
+                <NetworkBackground />
+                <CircleBackground />
+                <BrandLogo>GREEN NET</BrandLogo>
+                <WelcomeText>Connect & Thrive</WelcomeText>
+                <TypewriterText>
+                    <div className="typing">
+                        Where sustainability meets social networking
+                    </div>
+                </TypewriterText>
+            </LeftPanel>
+            <RightPanel>
+                <FormContainer>
+                    <Logo>GREEN NET</Logo>
+                    <FormTitle>登录你的账号</FormTitle>
+                    <StyledForm onFinish={onFinish} style={{ width: '100%' }}>
+                        <InputWrapper>
+                            <Form.Item
+                                name="email"
+                                rules={[
+                                    { required: true, message: '请输入邮箱' },
+                                    { type: 'email', message: '请输入有效的邮箱地址' }
+                                ]}
+                            >
+                                <Input 
+                                    prefix={<UserOutlined />} 
+                                    placeholder="邮箱" 
+                                />
+                            </Form.Item>
+                        </InputWrapper>
 
-                {/* 错误模态框 */}
+                        <InputWrapper>
+                            <Form.Item
+                                name="password"
+                                rules={[{ required: true, message: '请输入密码' }]}
+                            >
+                                <Input.Password 
+                                    prefix={<LockOutlined />} 
+                                    placeholder="密码"
+                                />
+                            </Form.Item>
+                        </InputWrapper>
+
+                        <Form.Item>
+                            <LoginButton type="primary" htmlType="submit" loading={loading}>
+                                登录
+                            </LoginButton>
+                        </Form.Item>
+                    </StyledForm>
+                    
+                    <SignUpText>
+                        还没有账号？
+                        <Link to="/register">立即注册</Link>
+                    </SignUpText>
+                </FormContainer>
+
                 <Modal
                     title="登录失败详情"
                     open={errorModal.visible}
-                    onOk={clearError}
-                    onCancel={clearError}
-                    width={600}
-                    maskClosable={false}
-                    keyboard={false}
-                    closable={false}
-                    footer={[
-                        <Button 
-                            key="ok" 
-                            type="primary" 
-                            onClick={clearError}
-                        >
-                            我知道了
-                        </Button>
-                    ]}
+                    onOk={() => setErrorModal({ ...errorModal, visible: false })}
+                    onCancel={() => setErrorModal({ ...errorModal, visible: false })}
                 >
-                    <pre style={{ 
-                        fontSize: '14px',
-                        backgroundColor: '#f5f5f5',
-                        padding: '15px',
-                        borderRadius: '4px',
-                        maxHeight: '400px',
-                        overflow: 'auto'
-                    }}>
-                        {JSON.stringify(errorModal.content, null, 2)}
-                    </pre>
+                    <pre>{JSON.stringify(errorModal.content, null, 2)}</pre>
                 </Modal>
-
-                <AuthCard>
-                    <Logo />
-                    <StyledForm onFinish={onFinish}>
-                        <Form.Item
-                            name="email"
-                            rules={[
-                                { required: true, message: '请输入邮箱' },
-                                { type: 'email', message: '请输入有效的邮箱地址' }
-                            ]}
-                        >
-                            <StyledInput 
-                                prefix={<UserOutlined />} 
-                                placeholder="邮箱" 
-                            />
-                        </Form.Item>
-                        <Form.Item
-                            name="password"
-                            rules={[{ required: true, message: '请输入密码' }]}
-                        >
-                            <StyledPassword 
-                                prefix={<LockOutlined />} 
-                                placeholder="密码"
-                            />
-                        </Form.Item>
-                        <Form.Item>
-                            <StyledButton type="primary" htmlType="submit" loading={loading} block>
-                                登录
-                            </StyledButton>
-                        </Form.Item>
-                        
-                        <Divider>或</Divider>
-                        
-                        <AuthLink>
-                            <Link to="/forgot-password">忘记密码?</Link>
-                        </AuthLink>
-                    </StyledForm>
-                </AuthCard>
-
-                <AuthCard style={{ marginTop: '10px' }}>
-                    <AuthLink>
-                        还没有账号？<Link to="/register">立即注册</Link>
-                    </AuthLink>
-                </AuthCard>
-
-                <div style={{ marginTop: '20px', textAlign: 'center' }}>
-                    <GetAppText>获取应用</GetAppText>
-                    <AppStoreButtons>
-                        <DownloadButton 
-                            image={XIAZAIImage} 
-                            storeName="App Store"
-                        />
-                        <DownloadButton 
-                            image={XIAZAIImage} 
-                            storeName="Google Play"
-                        />
-                    </AppStoreButtons>
-                </div>
-            </div>
-        </AuthContainer>
+            </RightPanel>
+        </PageContainer>
     );
 };
 
