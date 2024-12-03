@@ -289,24 +289,24 @@ const Profile = () => {
                 return;
             }
 
-            // 获取用户资料 - 如果没有 userId 就获取自己的资料
-            const profileResponse = await axios.get(
-                `http://localhost:5000/api/users/${userId || 'me'}`,
-                { 
-                    headers: { 
-                        Authorization: `Bearer ${token}`,
-                        'Session-ID': sessionId
+            // 并行获取所有需要的数据
+            const requests = [
+                // 获取用户资料
+                axios.get(
+                    `http://localhost:5000/api/users/${userId || 'me'}`,
+                    { 
+                        headers: { 
+                            Authorization: `Bearer ${token}`,
+                            'Session-ID': sessionId
+                        }
                     }
-                }
-            );
-            
-            const userData = profileResponse.data;
-            setProfileData(userData);
+                )
+            ];
 
-            // 只有在查看他人主页时才获取关注状态
+            // 如果是查看他人主页，添加关注状态和好友状态的请求
             if (userId && userId !== currentUserId) {
-                try {
-                    const followStatusResponse = await axios.get(
+                requests.push(
+                    axios.get(
                         `http://localhost:5000/api/follow/status/${userId}`,
                         {
                             headers: { 
@@ -315,12 +315,27 @@ const Profile = () => {
                                 'Cache-Control': 'no-cache'
                             }
                         }
-                    );
-                    setIsFollowing(followStatusResponse.data.isFollowing);
-                } catch (error) {
-                    console.error('获取关注状态失败:', error);
-                    setIsFollowing(false);
-                }
+                    ),
+                    axios.get(
+                        `http://localhost:5000/api/friends/status/${userId}`,
+                        {
+                            headers: { 
+                                Authorization: `Bearer ${token}`,
+                                'Session-ID': sessionId
+                            }
+                        }
+                    )
+                );
+            }
+
+            const responses = await Promise.all(requests);
+            const userData = responses[0].data;
+            setProfileData(userData);
+
+            // 如果是查看他人主页，设置关注和好友状态
+            if (userId && userId !== currentUserId && responses.length > 1) {
+                setIsFollowing(responses[1].data.isFollowing);
+                setFriendshipStatus(responses[2].data.status);
             }
 
             // 获取帖子
@@ -459,40 +474,6 @@ const Profile = () => {
         );
     }
 
-    // 添加好友按钮渲染函数
-    const renderFriendButton = () => {
-        if (!userId || userId === currentUserId) return null;
-        
-        switch (friendshipStatus) {
-            case 'none':
-                return (
-                    <Button type="primary" onClick={handleFriendAction}>
-                        添加好友
-                    </Button>
-                );
-            case 'pending':
-                return (
-                    <Button disabled>
-                        请求已发送
-                    </Button>
-                );
-            case 'friends':
-                return (
-                    <Button onClick={handleFriendAction}>
-                        删除好友
-                    </Button>
-                );
-            case 'received':
-                return (
-                    <Button type="primary">
-                        接受请求
-                    </Button>
-                );
-            default:
-                return null;
-        }
-    };
-
     // 修改渲染部分的按钮
     const renderActionButtons = () => {
         if (isOwnProfile) {
@@ -509,7 +490,23 @@ const Profile = () => {
 
         return (
             <Space>
-                {renderFriendButton()}
+                {friendshipStatus === 'friends' ? (
+                    <Button onClick={handleFriendAction}>
+                        删除好友
+                    </Button>
+                ) : friendshipStatus === 'pending' ? (
+                    <Button disabled>
+                        请求已发送
+                    </Button>
+                ) : friendshipStatus === 'received' ? (
+                    <Button type="primary" onClick={handleFriendAction}>
+                        接受请求
+                    </Button>
+                ) : (
+                    <Button type="primary" onClick={handleFriendAction}>
+                        添加好友
+                    </Button>
+                )}
                 <Button 
                     type={isFollowing ? 'default' : 'primary'}
                     onClick={handleFollowClick}
