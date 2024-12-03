@@ -24,7 +24,7 @@ const FriendRequest = ({ requests, onUpdate }) => {
     
     useEffect(() => {
         setPendingRequests(requests);
-    }, [JSON.stringify(requests)]);
+    }, [requests]);
 
     const handleRequest = async (requestId, action) => {
         try {
@@ -37,16 +37,12 @@ const FriendRequest = ({ requests, onUpdate }) => {
                 { headers: { Authorization: `Bearer ${token}` }}
             );
             
-            if (response.data.updatedRequests) {
-                setPendingRequests(response.data.updatedRequests);
-            } else {
-                setPendingRequests(prev => prev.filter(req => req._id !== requestId));
-            }
+            setPendingRequests(prev => prev.filter(req => req._id !== requestId));
             
             message.success(response.data.message);
             
             if (onUpdate) {
-                onUpdate();
+                await onUpdate();
             }
         } catch (error) {
             console.error('处理好友请求失败:', error);
@@ -61,49 +57,49 @@ const FriendRequest = ({ requests, onUpdate }) => {
             <List
                 loading={loading}
                 dataSource={pendingRequests}
-                renderItem={request => (
-                    <RequestItem key={request._id}>
-                        <List.Item.Meta
-                            avatar={
-                                <Avatar 
-                                    src={request.sender.avatar ? 
-                                        `http://localhost:5000${request.sender.avatar}` : null}
-                                    icon={!request.sender.avatar && <UserOutlined />}
-                                    size={44}
-                                />
-                            }
-                            title={request.sender.username}
-                            description={
-                                <div>
-                                    <div>{request.sender.bio || '这个人很懒，什么都没写~'}</div>
-                                    <div style={{ marginTop: 8, color: '#8e8e8e', fontSize: 12 }}>
-                                        {request.sender.statistics?.postsCount || 0} 帖子 · 
-                                        {request.sender.statistics?.friendsCount || 0} 好友
+                renderItem={request => {
+                    if (!request || !request.sender) {
+                        return null;
+                    }
+
+                    return (
+                        <List.Item
+                            key={request._id}
+                            actions={[
+                                <Button
+                                    type="primary"
+                                    onClick={() => handleRequest(request._id, 'accept')}
+                                >
+                                    接受
+                                </Button>,
+                                <Button
+                                    onClick={() => handleRequest(request._id, 'reject')}
+                                >
+                                    拒绝
+                                </Button>
+                            ]}
+                        >
+                            <List.Item.Meta
+                                avatar={
+                                    <Avatar
+                                        src={request.sender.avatar ? 
+                                            `http://localhost:5000${request.sender.avatar}` : null}
+                                        icon={!request.sender.avatar && <UserOutlined />}
+                                    />
+                                }
+                                title={request.sender.username || '未知用户'}
+                                description={
+                                    <div>
+                                        <div>{request.sender.bio || '这个人很懒，什么都没写~'}</div>
+                                        <div style={{ marginTop: 4, color: '#8e8e8e', fontSize: 12 }}>
+                                            {request.sender.statistics?.friendsCount || 0} 好友
+                                        </div>
                                     </div>
-                                </div>
-                            }
-                        />
-                        <div>
-                            <Button 
-                                type="primary" 
-                                onClick={() => handleRequest(request._id, 'accept')}
-                                style={{ marginRight: 8, backgroundColor: '#43a047', borderColor: '#43a047' }}
-                                loading={loading}
-                                disabled={loading}
-                            >
-                                接受
-                            </Button>
-                            <Button 
-                                onClick={() => handleRequest(request._id, 'reject')}
-                                loading={loading}
-                                disabled={loading}
-                            >
-                                拒绝
-                            </Button>
-                        </div>
-                    </RequestItem>
-                )}
-                locale={{ emptyText: '暂无好友请求' }}
+                                }
+                            />
+                        </List.Item>
+                    );
+                }}
             />
         </RequestContainer>
     );

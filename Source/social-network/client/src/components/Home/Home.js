@@ -981,6 +981,25 @@ const Home = () => {
         }
     };
 
+    const fetchFeed = async () => {
+        try {
+            const token = sessionStorage.getItem('token');
+            const response = await axios.get(
+                'http://localhost:5000/api/posts/feed',
+                {
+                    headers: { 
+                        Authorization: `Bearer ${token}`,
+                        'Cache-Control': 'no-cache'  // 添加这行确保获取最新数据
+                    }
+                }
+            );
+            setPosts(response.data);
+        } catch (error) {
+            console.error('获取动态流失败:', error);
+            message.error('获取动态失败');
+        }
+    };
+
     return (
         <Container>
             <StyledTabs 

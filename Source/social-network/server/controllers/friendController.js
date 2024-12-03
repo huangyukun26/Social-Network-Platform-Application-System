@@ -18,22 +18,33 @@ const safeNeo4jOp = async (operation, fallback = null) => {
 const friendController = {
     // 提取公共的请求格式化方法
     _formatFriendRequest(request) {
-        return {
-            _id: request._id,
-            sender: {
-                _id: request.sender._id,
-                username: request.sender.username,
-                avatar: request.sender.avatar,
-                bio: request.sender.bio,
-                statistics: {
-                    postsCount: request.sender.posts?.length || 0,
-                    friendsCount: request.sender.friends?.length || 0,
-                    likesCount: request.sender.likesReceived || 0
-                }
-            },
-            status: request.status,
-            createdAt: request.createdAt
-        };
+        // 添加空值检查
+        if (!request || !request.sender) {
+            console.warn('无效的好友请求数据:', request);
+            return null;
+        }
+
+        try {
+            return {
+                _id: request._id,
+                sender: {
+                    _id: request.sender._id,
+                    username: request.sender.username || '未知用户',
+                    avatar: request.sender.avatar,
+                    bio: request.sender.bio,
+                    statistics: {
+                        postsCount: request.sender.posts?.length || 0,
+                        friendsCount: request.sender.friends?.length || 0,
+                        likesCount: request.sender.likesReceived || 0
+                    }
+                },
+                status: request.status,
+                createdAt: request.createdAt
+            };
+        } catch (error) {
+            console.error('格式化好友请求数据失败:', error);
+            return null;
+        }
     },
 
     // 提取公共的缓存清理方法
@@ -63,11 +74,15 @@ const friendController = {
                 status: 'pending'
             }).populate('sender', 'username avatar bio posts friends likesReceived');
             
-            const requestsWithStats = requests.map(request => 
-                friendController._formatFriendRequest(request)
-            );
+            // 过滤掉无效的请求
+            const requestsWithStats = requests
+                .map(request => friendController._formatFriendRequest(request))
+                .filter(request => request !== null); // 过滤掉格式化失败的请求
             
-            await redisClient.setFriendRequests(req.userId, requestsWithStats);
+            if (requestsWithStats.length > 0) {
+                await redisClient.setFriendRequests(req.userId, requestsWithStats);
+            }
+            
             res.json(requestsWithStats);
         } catch (error) {
             console.error('获取好友请求失败:', error);
@@ -125,36 +140,48 @@ const friendController = {
                 return res.status(403).json({ message: '无权处理该请求' });
             }
 
+            // 更新请求状态
             request.status = action === 'accept' ? 'accepted' : 'rejected';
             await request.save();
 
             if (action === 'accept') {
-                await Promise.all([
-                    User.findByIdAndUpdate(req.userId, {
-                        $addToSet: { friends: request.sender._id }
-                    }),
-                    User.findByIdAndUpdate(request.sender._id, {
-                        $addToSet: { friends: req.userId }
-                    }),
-                    safeNeo4jOp(() => 
-                        neo4jService.addFriendship(req.userId, request.sender._id.toString())
-                    )
-                ]);
+                try {
+                    await Promise.all([
+                        User.findByIdAndUpdate(req.userId, {
+                            $addToSet: { friends: request.sender._id }
+                        }),
+                        User.findByIdAndUpdate(request.sender._id, {
+                            $addToSet: { friends: req.userId }
+                        })
+                    ]);
 
-                await friendController._clearFriendshipCaches([
-                    req.userId, 
-                    request.sender._id.toString()
-                ]);
+                    // 清理缓存
+                    try {
+                        await friendController._clearFriendshipCaches([
+                            req.userId,
+                            request.sender._id.toString()
+                        ]);
+                    } catch (cacheError) {
+                        console.error('清理缓存失败:', cacheError);
+                    }
+                } catch (error) {
+                    console.error('更新好友关系失败:', error);
+                    throw error;
+                }
             }
 
+            // 获取更新后的待处理请求列表
             const updatedRequests = await FriendRequest.find({
                 receiver: req.userId,
-                status: 'pending'
+                status: 'pending'  // 只获取待处理的请求
             }).populate('sender', 'username avatar bio posts friends likesReceived');
 
-            const formattedRequests = updatedRequests.map(req => 
-                friendController._formatFriendRequest(req)
-            );
+            const formattedRequests = updatedRequests
+                .map(req => friendController._formatFriendRequest(req))
+                .filter(req => req !== null);
+
+            // 清理相关缓存
+            await redisClient.clearFriendRequests(req.userId);
 
             res.json({
                 message: action === 'accept' ? '已接受好友请求' : '已拒绝好友请求',
@@ -435,7 +462,7 @@ const friendController = {
 
             res.json(enrichedCircles);
         } catch (error) {
-            console.error('获取社交子分析失败:', error);
+            console.error('获取社交子分失败:', error);
             res.status(500).json({ message: '获取分析失败' });
         }
     },
@@ -545,7 +572,7 @@ const friendController = {
                 return res.status(404).json({ message: '未找到社交路径' });
             }
 
-            // 获取路径上用户的详细信息
+            // 获取路径用户的详细信息
             const userIds = pathInfo.nodes.map(n => n.userId);
             const users = await User.find({ _id: { $in: userIds } })
                 .select('username avatar');
@@ -1091,7 +1118,7 @@ const friendController = {
             
             res.json(circles);
         } catch (error) {
-            console.error('获取社交圈子分析失败:', error);
+            console.error('���取社交圈子分析失败:', error);
             res.status(500).json({ message: '获取社交圈子分析失败' });
         }
     },

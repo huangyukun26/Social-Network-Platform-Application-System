@@ -289,7 +289,7 @@ const Profile = () => {
                 return;
             }
 
-            // 获取用户资料
+            // 获取用户资料 - 如果没有 userId 就获取自己的资料
             const profileResponse = await axios.get(
                 `http://localhost:5000/api/users/${userId || 'me'}`,
                 { 
@@ -303,10 +303,30 @@ const Profile = () => {
             const userData = profileResponse.data;
             setProfileData(userData);
 
-            // 检查是否已经是好友
+            // 只有在查看他人主页时才获取关注状态
             if (userId && userId !== currentUserId) {
-                const currentUserResponse = await axios.get(
-                    'http://localhost:5000/api/users/me',
+                try {
+                    const followStatusResponse = await axios.get(
+                        `http://localhost:5000/api/follow/status/${userId}`,
+                        {
+                            headers: { 
+                                Authorization: `Bearer ${token}`,
+                                'Session-ID': sessionId,
+                                'Cache-Control': 'no-cache'
+                            }
+                        }
+                    );
+                    setIsFollowing(followStatusResponse.data.isFollowing);
+                } catch (error) {
+                    console.error('获取关注状态失败:', error);
+                    setIsFollowing(false);
+                }
+            }
+
+            // 获取帖子
+            try {
+                const postsResponse = await axios.get(
+                    `http://localhost:5000/api/posts/user/${userId || userData._id}`,
                     { 
                         headers: { 
                             Authorization: `Bearer ${token}`,
@@ -314,140 +334,36 @@ const Profile = () => {
                         }
                     }
                 );
-                
-                const isFriend = currentUserResponse.data.friends.includes(userId);
-                if (isFriend) {
-                    setFriendshipStatus('friends');
-                } else {
-                    // 如果不是好友，再检查是否有待处理的请求
-                    try {
-                        const statusResponse = await axios.get(
-                            `http://localhost:5000/api/friends/status/${userId}`,
-                            { 
-                                headers: { 
-                                    Authorization: `Bearer ${token}`,
-                                    'Session-ID': sessionId
-                                }
-                            }
-                        );
-                        setFriendshipStatus(statusResponse.data.status);
-                        if (statusResponse.data.direction === 'received') {
-                            setFriendshipStatus('received');
-                        }
-                    } catch (error) {
-                        console.log('获取好友状态失败:', error);
-                        setFriendshipStatus('none');
-                    }
-                }
+                setPosts(postsResponse.data);
+            } catch (error) {
+                console.error('获取帖子失败:', error);
+                setPosts([]);
             }
 
-            // 获取帖子（如果是公开用户或者自己的主页）
-            if (!userId || userData.privacy?.profileVisibility === 'public' || 
-                userData._id === currentUserId || friendshipStatus === 'friends') {
-                try {
-                    const postsResponse = await axios.get(
-                        `http://localhost:5000/api/posts/user/${userId || userData._id}`,
-                        { 
-                            headers: { 
-                                Authorization: `Bearer ${token}`,
-                                'Session-ID': sessionId
-                            }
-                        }
-                    );
-                    setPosts(postsResponse.data);
-                } catch (error) {
-                    console.log('获取帖子失败:', error);
-                    setPosts([]);
-                }
-            }
+            // 获取关注和粉丝数据
+            try {
+                const [followersRes, followingRes] = await Promise.all([
+                    axios.get(
+                        `http://localhost:5000/api/follow/${userId || userData._id}/followers`,
+                        { headers: { Authorization: `Bearer ${token}` }}
+                    ),
+                    axios.get(
+                        `http://localhost:5000/api/follow/${userId || userData._id}/following`,
+                        { headers: { Authorization: `Bearer ${token}` }}
+                    )
+                ]);
 
-            // 获取关注和粉丝列表
-            const fetchPromises = [];
-            
-            fetchPromises.push(
-                axios.get(`http://localhost:5000/api/follow/${userId || userData._id}/followers`, {
-                    headers: { 
-                        Authorization: `Bearer ${token}`,
-                        'Session-ID': sessionId
-                    }
-                }).then(response => setFollowers(response.data))
-                .catch(() => setFollowers([]))
-            );
-
-            fetchPromises.push(
-                axios.get(`http://localhost:5000/api/follow/${userId || userData._id}/following`, {
-                    headers: { 
-                        Authorization: `Bearer ${token}`,
-                        'Session-ID': sessionId
-                    }
-                }).then(response => setFollowing(response.data))
-                .catch(() => setFollowing([]))
-            );
-
-            // 并行执行所有请求
-            await Promise.allSettled(fetchPromises);
-
-            // 只有在查看他人主页时才获取关系状态
-            if (userId && userId !== userData._id) {
-                try {
-                    // 获取好友状态
-                    const statusResponse = await axios.get(
-                        `http://localhost:5000/api/friends/status/${userId}`,
-                        { 
-                            headers: { 
-                                Authorization: `Bearer ${token}`,
-                                'Session-ID': sessionId
-                            }
-                        }
-                    );
-                    setFriendshipStatus(statusResponse.data.status);
-                    
-                    // 获取关注状态 - 修改这部分逻辑
-                    const followResponse = await axios.get(
-                        `http://localhost:5000/api/follow/${userId}/status`,
-                        { 
-                            headers: { 
-                                Authorization: `Bearer ${token}`,
-                                'Session-ID': sessionId
-                            }
-                        }
-                    );
-                    
-                    // 直接从关注列表中检查
-                    const isUserFollowing = followResponse.data.isFollowing || 
-                        following.some(f => f._id === currentUserId);
-                    setIsFollowing(isUserFollowing);
-
-                } catch (error) {
-                    console.error('获取关系状态失败:', error);
-                    setFriendshipStatus('none');
-                    setIsFollowing(false);
-                }
+                setFollowers(followersRes.data);
+                setFollowing(followingRes.data);
+            } catch (error) {
+                console.error('获取关注数据失败:', error);
+                setFollowers([]);
+                setFollowing([]);
             }
 
         } catch (error) {
-            if (error.response && error.response.status === 403) {
-                const limitedData = {
-                    _id: userId,
-                    username: '私密用户',
-                    avatar: null,
-                    bio: '该用户资料已设为私密',
-                    privacy: { profileVisibility: 'private' },
-                    statistics: {
-                        postsCount: '-',
-                        friendsCount: '-',
-                        followersCount: '-',
-                        followingCount: '-'
-                    }
-                };
-                setProfileData(limitedData);
-                setPosts([]);
-                setFollowers([]);
-                setFollowing([]);
-            } else {
-                console.error('获取个人资料失败:', error);
-                message.error('获取个人资料失败');
-            }
+            console.error('获取个人资料失败:', error);
+            message.error('获取个人资料失败');
         } finally {
             setLoading(false);
             setIsDataFetching(false);
@@ -455,36 +371,6 @@ const Profile = () => {
     };
 
     // 5. 事件处理函数
-    const handleFollow = async () => {
-        try {
-            const token = sessionStorage.getItem('token');
-            const sessionId = sessionStorage.getItem('sessionId');
-            if (!token || !sessionId) {
-                message.error('请先登录');
-                navigate('/login');
-                return;
-            }
-
-            await axios.post(
-                `http://localhost:5000/api/follow/${userId}`,
-                {},
-                { 
-                    headers: { 
-                        Authorization: `Bearer ${token}`,
-                        'Session-ID': sessionId
-                    }
-                }
-            );
-            
-            setIsFollowing(!isFollowing);
-            message.success(isFollowing ? '已取消关注' : '已关注');
-            fetchProfileData();
-        } catch (error) {
-            console.error('关注操作失败:', error);
-            message.error('操作失败');
-        }
-    };
-
     const handleFriendAction = async () => {
         try {
             const token = sessionStorage.getItem('token');
@@ -546,63 +432,10 @@ const Profile = () => {
     }, [navigate]);
 
     useEffect(() => {
-        if (userId) {
-            fetchFollowData();
-        }
-    }, [userId]);
-
-    useEffect(() => {
-        fetchProfileData();
-    }, [userId]);
-
-    const fetchFriendshipStatus = async (retries = 3) => {
-        for (let i = 0; i < retries; i++) {
-            try {
-                const token = sessionStorage.getItem('token');
-                const sessionId = sessionStorage.getItem('sessionId');
-                const response = await axios.get(
-                    `http://localhost:5000/api/friends/status/${userId}`,
-                    { 
-                        headers: { 
-                            Authorization: `Bearer ${token}`,
-                            'Session-ID': sessionId
-                        }
-                    }
-                );
-                return response.data;
-            } catch (error) {
-                if (i === retries - 1) throw error;
-                await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-            }
-        }
-    };
-
-    // 修改 useEffect 中的获取状态逻辑
-    useEffect(() => {
-        if (userId && userId !== currentUserId) {
-            fetchFriendshipStatus()
-                .then(data => {
-                    setFriendshipStatus(data.status);
-                    if (data.direction === 'received') {
-                        setFriendshipStatus('received');
-                    }
-                })
-                .catch(error => {
-                    console.error('获取好友状态失败:', error);
-                    setFriendshipStatus('none');
-                });
+        if (currentUserId) {  // 只要有当前用户ID就可以加载数据
+            fetchProfileData();
         }
     }, [userId, currentUserId]);
-
-    // 添加新的 useEffect
-    useEffect(() => {
-        // 如果是查看他人主页，且 following 数组已加载
-        if (userId && userId !== currentUserId && following.length > 0) {
-            // 检查当前用户是否在 following 列表中
-            const isUserFollowing = following.some(f => f._id === currentUserId);
-            setIsFollowing(isUserFollowing);
-        }
-    }, [userId, currentUserId, following]);
 
     // 7. 渲染逻辑
     if (loading) {
@@ -660,6 +493,83 @@ const Profile = () => {
         }
     };
 
+    // 修改渲染部分的按钮
+    const renderActionButtons = () => {
+        if (isOwnProfile) {
+            return (
+                <Button onClick={() => setIsEditModalVisible(true)}>
+                    编辑个人资料
+                </Button>
+            );
+        }
+
+        if (userId === currentUserId) {
+            return null;
+        }
+
+        return (
+            <Space>
+                {renderFriendButton()}
+                <Button 
+                    type={isFollowing ? 'default' : 'primary'}
+                    onClick={handleFollowClick}
+                >
+                    {isFollowing ? '已关注' : '关注'}
+                </Button>
+            </Space>
+        );
+    };
+
+    // 修改关注处理函数
+    const handleFollowClick = async () => {
+        try {
+            const token = sessionStorage.getItem('token');
+            const sessionId = sessionStorage.getItem('sessionId');
+            if (!token || !sessionId) {
+                message.error('请先登录');
+                navigate('/login');
+                return;
+            }
+
+            // 先更新本地状态
+            const newIsFollowing = !isFollowing;
+            setIsFollowing(newIsFollowing);
+
+            const response = await axios.post(
+                `http://localhost:5000/api/follow/${userId}`,
+                {},
+                {
+                    headers: { 
+                        Authorization: `Bearer ${token}`,
+                        'Session-ID': sessionId
+                    }
+                }
+            );
+
+            // 如果后端返回的状态与我们预期的不一致，回滚本地状态
+            if (response.data.isFollowing !== newIsFollowing) {
+                setIsFollowing(response.data.isFollowing);
+            }
+
+            // 更新关注者数量等数据
+            if (profileData) {
+                setProfileData(prev => ({
+                    ...prev,
+                    followers: response.data.isFollowing 
+                        ? [...(prev.followers || []), currentUserId]
+                        : (prev.followers || []).filter(id => id !== currentUserId)
+                }));
+            }
+
+            message.success(response.data.isFollowing ? '关注成功' : '已取消关注');
+        } catch (error) {
+            // 发生错误时回滚状态
+            setIsFollowing(!isFollowing);
+            console.error('关注操作失败:', error);
+            message.error('操作失败，请重试');
+        }
+    };
+
     return (
         <ProfileContainer>
             <ProfileHeader>
@@ -680,25 +590,7 @@ const Profile = () => {
                         }
                     </Username>
                     
-                    {isOwnProfile ? (
-                        <Button onClick={() => setIsEditModalVisible(true)}>
-                            编辑个人资料
-                        </Button>
-                    ) : (
-                        <Space>
-                            {userId !== currentUserId && (
-                                <>
-                                    {renderFriendButton()}
-                                    <Button
-                                        type={isFollowing ? 'default' : 'primary'}
-                                        onClick={handleFollow}
-                                    >
-                                        {isFollowing ? '已关注' : '关注'}
-                                    </Button>
-                                </>
-                            )}
-                        </Space>
-                    )}
+                    {renderActionButtons()}
 
                     <Stats>
                         <StatItem onClick={() => setActiveTab('posts')}>

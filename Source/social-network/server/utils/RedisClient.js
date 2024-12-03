@@ -412,7 +412,7 @@ class RedisClient {
         return session && Object.keys(session).length > 0 ? session : null;
     }
 
-    // 更新会��活跃时间
+    // 更新会活跃时间
     async updateSessionActivity(userId, sessionId) {
         const sessionKey = `session:${userId}`;
         const sessionData = await this.client.hget(sessionKey, sessionId);
@@ -480,7 +480,7 @@ class RedisClient {
     // 确保在进程退出时清理资源
     async gracefulShutdown() {
         await this.cleanup();
-        // 不要关闭 Redis 连接，因为可能其他地方还在使用
+        // 不要���闭 Redis 连接，因为可能其他地方还在使用
     }
 
     // 添加测试辅助方法
@@ -496,15 +496,19 @@ class RedisClient {
     // 添加用户缓存清理方法
     async clearUserCache(userId) {
         try {
-            console.log('开始清理用户缓存:', userId);
-            
-            // 获取所有与该用户相关的缓存键
+            // 直接定义要清理的缓存模式
             const patterns = [
+                `user:${userId}:*`,
                 `friend:*:${userId}*`,
                 `friends:list:${userId}*`,
                 `friend:recommendations:${userId}*`,
                 `friendship:${userId}:*`,
-                `session:${userId}:*`
+                `session:${userId}:*`,
+                `user:online:${userId}*`,
+                `friends:online:${userId}*`,
+                `friend:interactions:${userId}:*`,
+                `friend:groups:${userId}*`,
+                `friend:requests:${userId}*`
             ];
             
             // 并行删除所有匹配的键
@@ -824,6 +828,65 @@ class RedisClient {
         } catch (error) {
             console.error('Redis hdel 失败:', error);
             throw error;
+        }
+    }
+
+    async clearFriendRequests(userId) {
+        try {
+            const pattern = `friend:requests:${userId}*`;
+            const keys = await this.client.keys(pattern);
+            if (keys.length > 0) {
+                await this.client.del(keys);
+            }
+        } catch (error) {
+            console.error('清理好友请求缓存失败:', error);
+        }
+    }
+
+    async clearFollowCache(userId, targetId) {
+        const patterns = [
+            `follow:${userId}:${targetId}`,
+            `follow:status:${userId}:${targetId}`
+        ];
+        await this.clearPatterns(patterns);
+    }
+
+    async clearUserProfileCache(userId) {
+        const patterns = [
+            `user:profile:${userId}*`,
+            `user:stats:${userId}*`
+        ];
+        await this.clearPatterns(patterns);
+    }
+
+    async clearFeedCache(userId) {
+        const patterns = [
+            `feed:${userId}*`,
+            `recommendations:${userId}*`
+        ];
+        await this.clearPatterns(patterns);
+    }
+
+    async clearFollowListCache(userId) {
+        const patterns = [
+            `following:${userId}*`,
+            `followers:${userId}*`
+        ];
+        await this.clearPatterns(patterns);
+    }
+
+    // 通用的缓存清理方法
+    async clearPatterns(patterns) {
+        try {
+            const deletePromises = patterns.map(async pattern => {
+                const keys = await this.client.keys(pattern);
+                if (keys.length > 0) {
+                    await this.client.del(keys);
+                }
+            });
+            await Promise.all(deletePromises);
+        } catch (error) {
+            console.error('清理缓存失败:', error);
         }
     }
 }

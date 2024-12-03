@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
+const redisClient = require('../utils/RedisClient');
 
 // 关注/取消关注用户
 router.post('/:userId', auth, async (req, res) => {
@@ -27,11 +29,41 @@ router.post('/:userId', auth, async (req, res) => {
             // 添加关注
             currentUser.following.push(userToFollow._id);
             userToFollow.followers.push(currentUser._id);
+            
+            // 创建通知
+            await new Notification({
+                type: 'follow',
+                sender: currentUser._id,
+                recipient: userToFollow._id,
+                content: '关注了你'
+            }).save();
         }
 
         await Promise.all([currentUser.save(), userToFollow.save()]);
 
-        // 返回更新后的完整数据
+        // 清理相关缓存
+        try {
+            await Promise.all([
+                // 清理关注状态缓存
+                redisClient.clearFollowCache(req.userId, req.params.userId),
+                // 清理用户主页缓存
+                redisClient.clearUserProfileCache(req.params.userId),
+                redisClient.clearUserProfileCache(req.userId),
+                // 清理推荐帖子缓存
+                redisClient.clearFeedCache(req.userId),
+                // 清理用户关注列表缓存
+                redisClient.clearFollowListCache(req.userId),
+                redisClient.clearFollowListCache(req.params.userId),
+                // 清理关注状态缓存
+                redisClient.clearCache([
+                    `follow:status:${req.userId}:*`,
+                    `follow:status:*:${req.userId}`
+                ])
+            ]);
+        } catch (error) {
+            console.error('缓存清理失败:', error);
+        }
+
         res.json({
             isFollowing: !isFollowing,
             followersCount: userToFollow.followers.length,
@@ -95,14 +127,22 @@ router.get('/:userId/followers', auth, async (req, res) => {
 router.get('/status/:userId', auth, async (req, res) => {
     try {
         const currentUser = await User.findById(req.userId)
-            .populate('following', '_id');
+            .select('following');  // 只获取 following 字段
+        const targetUser = await User.findById(req.params.userId)
+            .select('followers');  // 只获取 followers 字段
+        
+        if (!currentUser || !targetUser) {
+            return res.status(404).json({ message: '用户不存在' });
+        }
         
         // 检查目标用户是否在当前用户的关注列表中
-        const isFollowing = currentUser.following.some(
-            user => user._id.toString() === req.params.userId
-        );
+        const isFollowing = currentUser.following.includes(targetUser._id);
         
-        res.json({ isFollowing });
+        res.json({
+            isFollowing,
+            followersCount: targetUser.followers.length,
+            followingCount: currentUser.following.length
+        });
     } catch (error) {
         console.error('获取关注状态失败:', error);
         res.status(500).json({ message: '获取关注状态失败' });

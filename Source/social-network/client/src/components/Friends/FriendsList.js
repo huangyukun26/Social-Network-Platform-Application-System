@@ -92,7 +92,12 @@ const FriendsList = ({ friends, loading, onFriendUpdate }) => {
     const [onlineStatus, setOnlineStatus] = useState({});
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [selectedFriend, setSelectedFriend] = useState(null);
+    const [localFriends, setLocalFriends] = useState(friends);
     const navigate = useNavigate();
+
+    useEffect(() => {
+        setLocalFriends(friends);
+    }, [friends]);
 
     const fetchOnlineStatus = async () => {
         try {
@@ -135,7 +140,10 @@ const FriendsList = ({ friends, loading, onFriendUpdate }) => {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
+            setLocalFriends(prev => prev.filter(friend => friend._id !== friendId));
+            
             message.success('好友删除成功');
+            
             if (onFriendUpdate) {
                 onFriendUpdate();
             }
@@ -207,7 +215,7 @@ const FriendsList = ({ friends, loading, onFriendUpdate }) => {
     return (
         <>
             <List
-                dataSource={friends}
+                dataSource={localFriends}
                 loading={loading}
                 renderItem={friend => (
                     <FriendItem
@@ -215,7 +223,15 @@ const FriendsList = ({ friends, loading, onFriendUpdate }) => {
                             <Button 
                                 type="link" 
                                 danger
-                                onClick={() => handleRemoveFriend(friend._id)}
+                                onClick={() => {
+                                    Modal.confirm({
+                                        title: '确认删除好友',
+                                        content: `确定要删除好友 ${friend.username} 吗？`,
+                                        okText: '确认',
+                                        cancelText: '取消',
+                                        onOk: () => handleRemoveFriend(friend._id)
+                                    });
+                                }}
                             >
                                 删除好友
                             </Button>
@@ -224,6 +240,7 @@ const FriendsList = ({ friends, loading, onFriendUpdate }) => {
                         {renderFriendInfo(friend)}
                     </FriendItem>
                 )}
+                locale={{ emptyText: '暂无好友' }}
             />
             <Modal
                 visible={isModalVisible}
