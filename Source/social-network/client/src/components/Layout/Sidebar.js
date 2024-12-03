@@ -1,6 +1,6 @@
 // 保留原有功能的侧边栏
 import React, { useState, useEffect } from 'react';
-import { Menu, Badge, Popover,Avatar, Modal} from 'antd';
+import { Menu, Badge, Popover,Avatar, Modal, Button, Empty} from 'antd';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { theme } from '../../styles/theme';
 import styled from 'styled-components';
@@ -24,45 +24,44 @@ import { formatTime } from '../../utils/timeFormat'; // 添加 formatTime
 
 // 添加 NotificationPopover 样式组件
 const NotificationPopover = styled.div`
-  width: 300px;
-  max-height: 400px;
-  overflow-y: auto;
+    width: 360px;
+    max-height: 500px;
+    overflow-y: auto;
 
-  .notification-header {
-    padding: 12px 16px;
-    font-weight: 600;
-    border-bottom: 1px solid ${theme.colors.border};
-  }
-
-  .notification-item {
-    padding: 8px 16px;
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-    transition: background-color 0.2s;
-
-    &:hover {
-      background-color: ${theme.colors.backgroundHover};
+    .notification-header {
+        padding: 12px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
 
-    .avatar {
-      margin-right: 12px;
-    }
+    .notification-item {
+        padding: 12px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        background: ${props => props.isRead ? 'white' : 'rgba(29, 155, 240, 0.1)'};
 
-    .content {
-      flex: 1;
-      font-size: 14px;
-      
-      .username {
-        font-weight: 600;
-      }
-      
-      .time {
-        font-size: 12px;
-        color: ${theme.colors.text.secondary};
-      }
+        &:hover {
+            background: #f5f5f5;
+        }
+
+        .avatar {
+            margin-right: 12px;
+        }
+
+        .content {
+            flex: 1;
+        }
+
+        .time {
+            color: #8e8e8e;
+            font-size: 12px;
+            margin-top: 4px;
+        }
     }
-  }
 `;
 
 const SidebarContainer = styled.div`
@@ -134,6 +133,7 @@ const Sidebar = () => {
     const location = useLocation();
     const [user, setUser] = useState(null);
     const [notifications, setNotifications] = useState([]);
+    const [unreadCount, setUnreadCount] = useState(0);
     const [unreadMessages, setUnreadMessages] = useState(0);
     const [showCreatePost, setShowCreatePost] = useState(false);
 
@@ -151,15 +151,33 @@ const Sidebar = () => {
     const fetchNotifications = async () => {
         try {
             const token = sessionStorage.getItem('token');
-            const response = await axios.get('http://localhost:5000/api/friends/requests', { // 修改为正确的endpoint
+            const response = await axios.get('http://localhost:5000/api/friends/requests', {
                 headers: { 
                     Authorization: `Bearer ${token}`,
                     'Session-ID': sessionStorage.getItem('sessionId')
                 }
             });
-            setNotifications(response.data);
+
+            // 只过滤待处理的请求，不过滤已读状态
+            const pendingRequests = response.data.filter(request => 
+                request.status === 'pending'  // 移除 && !request.isRead 条件
+            );
+
+            // 格式化好友请求为通知格式
+            const formattedNotifications = pendingRequests.map(request => ({
+                _id: request._id,
+                type: 'friend_request',
+                sender: request.sender,
+                content: '向你发送了好友请求',
+                isRead: request.isRead,
+                createdAt: request.createdAt
+            }));
+
+            setNotifications(formattedNotifications);
+            // 只计算未读消息的数量
+            setUnreadCount(formattedNotifications.filter(n => !n.isRead).length);
         } catch (error) {
-            console.error('获取通知失败:', error);
+            console.error('获取好友请求失败:', error);
         }
     };
 
@@ -215,28 +233,95 @@ const Sidebar = () => {
         navigate(`/profile/${storedUser._id}`);
     };
 
+    // 修改处理通知点击的函数
+    const handleNotificationClick = async (notification) => {
+        try {
+            const token = sessionStorage.getItem('token');
+            // 标记该通知为已读
+            await axios.put(
+                `http://localhost:5000/api/friends/requests/${notification._id}/read`,
+                {},
+                { headers: { Authorization: `Bearer ${token}` }}
+            );
+
+            // 更新本地通知状态，但保留通知
+            setNotifications(prev =>
+                prev.map(n => 
+                    n._id === notification._id ? { ...n, isRead: true } : n
+                )
+            );
+            
+            // 更新未读计数
+            setUnreadCount(prev => Math.max(0, prev - 1));
+
+        } catch (error) {
+            console.error('处理通知失败:', error);
+            message.error('操作失败');
+        }
+    };
+
+    // 修改标记全部已读的处理函数
+    const handleMarkAllRead = async () => {
+        try {
+            const token = sessionStorage.getItem('token');
+            await axios.put(
+                'http://localhost:5000/api/friends/requests/read-all',
+                {},
+                {
+                    headers: { Authorization: `Bearer ${token}` }
+                }
+            );
+            
+            // 更新本地通知状态，但保留所有通知
+            setNotifications(prev => 
+                prev.map(n => ({ ...n, isRead: true }))
+            );
+            
+            // 重置未读计数
+            setUnreadCount(0);
+            
+            message.success('已标记所有通知为已读');
+        } catch (error) {
+            console.error('标记已读失败:', error);
+            message.error('操作失败');
+        }
+    };
+
+    // 通知内容渲染
     const notificationContent = (
         <NotificationPopover>
-            <div className="notification-header">通知</div>
+            <div className="notification-header">
+                <span>好友请求</span>
+                {notifications.some(n => !n.isRead) && (
+                    <Button type="link" size="small" onClick={handleMarkAllRead}>
+                        全部标记已读
+                    </Button>
+                )}
+            </div>
             {notifications.length === 0 ? (
-                <div style={{ padding: '16px', textAlign: 'center' }}>
-                    暂无新通知
-                </div>
+                <Empty description="暂无好友请求" style={{ padding: '20px' }} />
             ) : (
                 notifications.map(notification => (
-                    <div 
-                        key={notification._id} 
+                    <div
+                        key={notification._id}
                         className="notification-item"
-                        onClick={() => navigate('/friend-requests')}
+                        onClick={() => handleNotificationClick(notification)}
+                        style={{
+                            backgroundColor: notification.isRead ? 'white' : 'rgba(29, 155, 240, 0.1)'
+                        }}
                     >
-                        <Avatar 
+                        <Avatar
                             className="avatar"
-                            src={notification.sender.avatar} 
-                            icon={<UserOutlined />}
+                            src={notification.sender.avatar ? 
+                                `http://localhost:5000${notification.sender.avatar}` : null}
+                            icon={!notification.sender.avatar && <UserOutlined />}
                         />
                         <div className="content">
-                            <span className="username">{notification.sender.username}</span>
-                            {' 向你发送了好友请求'}
+                            <div>
+                                <strong>{notification.sender.username}</strong>
+                                {' '}
+                                向你发送了好友请求
+                            </div>
                             <div className="time">
                                 {formatTime(notification.createdAt)}
                             </div>
@@ -270,15 +355,15 @@ const Sidebar = () => {
                                 个人主页
                             </Link>
                         </Menu.Item>
-                        <Menu.Item key="/notifications">
-                            <Popover 
+                        <Menu.Item key="notifications">
+                            <Popover
                                 content={notificationContent}
                                 trigger="click"
                                 placement="right"
                                 overlayStyle={{ padding: 0 }}
                             >
-                                <Badge count={notifications.length}>
-                                    {notifications.length > 0 ? <HeartFilled /> : <HeartOutlined />}
+                                <Badge count={unreadCount}>
+                                    <BellOutlined />
                                     <span style={{marginLeft: '8px'}}>通知</span>
                                 </Badge>
                             </Popover>

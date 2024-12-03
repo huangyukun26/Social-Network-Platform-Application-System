@@ -14,7 +14,7 @@ import FriendSuggestions from './FriendSuggestions';
 import UserSearch from './UserSearch';
 import SocialAnalytics from './Analytics/SocialAnalytics';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const { TabPane } = Tabs;
 
@@ -40,11 +40,19 @@ const StyledTabs = styled(Tabs)`
 
 const Friends = () => {
   const [activeTab, setActiveTab] = useState('1');
+  const location = useLocation();
+  const navigate = useNavigate();
   const [friendRequests, setFriendRequests] = useState([]);
   const [friends, setFriends] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (location.state?.activeTab === 'requests') {
+      setActiveTab('1');
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.state, navigate]);
 
   const fetchFriendData = async () => {
     try {

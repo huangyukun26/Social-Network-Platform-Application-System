@@ -64,25 +64,40 @@ const friendController = {
     // 获取好友请求列表
     getFriendRequests: async (req, res) => {
         try {
-            const cachedRequests = await redisClient.getFriendRequests(req.userId);
-            if (cachedRequests) {
-                return res.json(cachedRequests);
-            }
-
             const requests = await FriendRequest.find({
                 receiver: req.userId,
                 status: 'pending'
-            }).populate('sender', 'username avatar bio posts friends likesReceived');
+            })
+            .populate('sender', 'username avatar bio posts friends likesReceived')
+            .sort({ createdAt: -1 });
             
             // 过滤掉无效的请求
             const requestsWithStats = requests
-                .map(request => friendController._formatFriendRequest(request))
-                .filter(request => request !== null); // 过滤掉格式化失败的请求
-            
-            if (requestsWithStats.length > 0) {
-                await redisClient.setFriendRequests(req.userId, requestsWithStats);
-            }
-            
+                .map(request => {
+                    if (!request || !request.sender) {
+                        console.warn('无效的好友请求数据:', request);
+                        return null;
+                    }
+                    return {
+                        _id: request._id,
+                        sender: {
+                            _id: request.sender._id,
+                            username: request.sender.username || '未知用户',
+                            avatar: request.sender.avatar,
+                            bio: request.sender.bio,
+                            statistics: {
+                                postsCount: request.sender.posts?.length || 0,
+                                friendsCount: request.sender.friends?.length || 0,
+                                likesCount: request.sender.likesReceived || 0
+                            }
+                        },
+                        status: request.status,
+                        isRead: request.isRead,
+                        createdAt: request.createdAt
+                    };
+                })
+                .filter(request => request !== null);
+
             res.json(requestsWithStats);
         } catch (error) {
             console.error('获取好友请求失败:', error);
@@ -140,7 +155,8 @@ const friendController = {
                 return res.status(403).json({ message: '无权处理该请求' });
             }
 
-            // 更新请求状态
+            // 标记为已读
+            request.isRead = true;
             request.status = action === 'accept' ? 'accepted' : 'rejected';
             await request.save();
 
@@ -341,7 +357,7 @@ const friendController = {
             res.json({ status: 'none' });
         } catch (error) {
             console.error('获取好友状态失败:', error);
-            res.status(500).json({ message: '获取好友状态失败' });
+            res.status(500).json({ message: '获取���友状态失败' });
         }
     },
 
@@ -1118,7 +1134,7 @@ const friendController = {
             
             res.json(circles);
         } catch (error) {
-            console.error('���取社交圈子分析失败:', error);
+            console.error('取社交圈子分析失败:', error);
             res.status(500).json({ message: '获取社交圈子分析失败' });
         }
     },

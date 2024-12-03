@@ -91,20 +91,18 @@ const adminRoutes = require('./routes/admin');
 const cacheMonitorRoutes = require('./routes/admin/cache-monitor');
 const messageRoutes = require('./routes/messageRoutes');
 const searchRoutes = require('./routes/search');
+const notificationRoutes = require('./routes/notifications');
 
-// 注册路由 - 只保留一次注册，并添加日志中间件
-app.use('/api/follow', (req, res, next) => {
-    console.log('Follow路由访问:', req.method, req.path);
-    next();
-}, followRoutes);
-
+// 注册路由
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/friends', friendRoutes);
+app.use('/api/follow', followRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cache', cacheMonitorRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 基础路由
 app.get('/', (req, res) => {
@@ -163,6 +161,10 @@ if (process.env.NODE_ENV !== 'test') {
             console.log('搜索相关路由:');
             console.log('- GET  /api/search/suggestions');
             console.log('- GET  /api/search/results');
+            console.log('通知相关路由:');
+            console.log('- GET  /api/notifications');
+            console.log('- PUT  /api/notifications/read/:notificationId');
+            console.log('- PUT  /api/notifications/read-all');
         });
     });
 

@@ -6,6 +6,7 @@ const User = require('../models/User');
 const RedisClient = require('../utils/RedisClient');
 const Neo4jService = require('../services/neo4jService');
 const DataSyncService = require('../services/DataSyncService');
+const FriendRequest = require('../models/FriendRequest');
 
 // 添加好友隐私检查中间件
 const checkFriendPrivacy = async (req, res, next) => {
@@ -139,5 +140,62 @@ router.get('/status/online', auth, async (req, res) => {
 router.post('/interaction/:friendId', auth, friendController.recordInteraction);
 router.get('/interaction/:friendId/history', auth, friendController.getInteractionHistory);
 router.get('/interaction/recent', auth, friendController.getRecentlyInteractedFriends);
+
+// 添加新的路由处理函数
+
+// 标记单个好友请求为已读
+router.put('/requests/:requestId/read', auth, async (req, res) => {
+    try {
+        const request = await FriendRequest.findOneAndUpdate(
+            {
+                _id: req.params.requestId,
+                receiver: req.userId
+            },
+            { $set: { isRead: true } },
+            { new: true }
+        );
+
+        if (!request) {
+            return res.status(404).json({ message: '请求不存在' });
+        }
+
+        // 清理相关缓存
+        try {
+            await RedisClient.clearFriendRequests(req.userId);
+        } catch (error) {
+            console.error('清理缓存失败:', error);
+        }
+
+        res.json(request);
+    } catch (error) {
+        console.error('标记好友请求已读失败:', error);
+        res.status(500).json({ message: '操作失败' });
+    }
+});
+
+// 标记所有好友请求为已读
+router.put('/requests/read-all', auth, async (req, res) => {
+    try {
+        await FriendRequest.updateMany(
+            {
+                receiver: req.userId,
+                isRead: false
+            },
+            { $set: { isRead: true } }
+        );
+
+        // 清理相关缓存
+        try {
+            await RedisClient.clearFriendRequests(req.userId);
+        } catch (error) {
+            console.error('清理缓存失败:', error);
+        }
+
+        res.json({ message: '所有请求已标记为已读' });
+    } catch (error) {
+        console.error('标记所有好友请求已读失败:', error);
+        res.status(500).json({ message: '操作失败' });
+    }
+});
 
 module.exports = router; 
