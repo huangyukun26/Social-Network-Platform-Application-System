@@ -13,7 +13,8 @@ import {
     LogoutOutlined,
     HeartOutlined,
     HeartFilled,
-    MessageOutlined
+    MessageOutlined,
+    CommentOutlined
 } from '@ant-design/icons';
 import MessagePanel from '../Messages/MessagePanel';
 import axios from 'axios';
@@ -62,6 +63,34 @@ const NotificationPopover = styled.div`
             margin-top: 4px;
         }
     }
+`;
+
+const UserPopoverContent = styled.div`
+  width: 300px;
+  padding: 16px;
+
+  .header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .info {
+    margin-left: 12px;
+    flex: 1;
+  }
+
+  .username {
+    font-weight: 600;
+    font-size: 16px;
+    color: #262626;
+  }
+
+  .bio {
+    color: #8e8e8e;
+    margin: 8px 0;
+    font-size: 14px;
+  }
 `;
 
 const SidebarContainer = styled.div`
@@ -128,14 +157,84 @@ const PostButton = styled.button`
   }
 `;
 
+// 修改帖子预览的样式组件
+const PostPreviewPopover = styled.div`
+  width: 600px;  // 加宽以便更好地显示内容
+  display: flex;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+
+  .image-section {
+    flex: 1.5;
+    background: ${props => props.hasImage ? '#000' : '#f5f5f5'};
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    position: relative;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .text-only {
+      padding: 20px;
+      color: #262626;
+      font-size: 16px;
+      text-align: center;
+      width: 100%;
+    }
+  }
+
+  .content-section {
+    flex: 1;
+    border-left: 1px solid #efefef;
+    display: flex;
+    flex-direction: column;
+
+    .header {
+      padding: 16px;
+      border-bottom: 1px solid #efefef;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .post-content {
+      padding: 16px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .post-stats {
+      padding: 16px;
+      border-top: 1px solid #efefef;
+      display: flex;
+      gap: 24px;
+      color: #8e8e8e;
+
+      .stat-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+    }
+  }
+`;
+
 const Sidebar = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const [user, setUser] = useState(null);
     const [notifications, setNotifications] = useState([]);
-    const [unreadCount, setUnreadCount] = useState(0);
+    const [friendRequestCount, setFriendRequestCount] = useState(0);
     const [unreadMessages, setUnreadMessages] = useState(0);
     const [showCreatePost, setShowCreatePost] = useState(false);
+    const [loadingUser, setLoadingUser] = useState(false);
+    const [currentPopoverUser, setCurrentPopoverUser] = useState(null);
 
     useEffect(() => {
         const token = sessionStorage.getItem('token');
@@ -147,37 +246,70 @@ const Sidebar = () => {
         }
     }, []);
 
-    // 使用原来 Navbar.js 中的正确 API endpoint
+    // 修改获取通知的函数
     const fetchNotifications = async () => {
         try {
             const token = sessionStorage.getItem('token');
-            const response = await axios.get('http://localhost:5000/api/friends/requests', {
+            // 1. 获取好友请求
+            const friendResponse = await axios.get('http://localhost:5000/api/friends/requests', {
                 headers: { 
                     Authorization: `Bearer ${token}`,
                     'Session-ID': sessionStorage.getItem('sessionId')
                 }
             });
 
-            // 只过滤待处理的请求，不过滤已读状态
-            const pendingRequests = response.data.filter(request => 
-                request.status === 'pending'  // 移除 && !request.isRead 条件
-            );
+            // 2. 获取所有通知（关注、点赞、评论）
+            const notificationsResponse = await axios.get('http://localhost:5000/api/notifications', {
+                headers: { 
+                    Authorization: `Bearer ${token}`,
+                    'Session-ID': sessionStorage.getItem('sessionId')
+                }
+            });
 
-            // 格式化好友请求为通知格式
-            const formattedNotifications = pendingRequests.map(request => ({
-                _id: request._id,
-                type: 'friend_request',
-                sender: request.sender,
-                content: '向你发送了好友请求',
-                isRead: request.isRead,
-                createdAt: request.createdAt
-            }));
+            // 处理好友请求通知
+            const pendingRequests = friendResponse.data
+                .filter(request => request.status === 'pending')
+                .map(request => ({
+                    _id: request._id,
+                    type: 'friend_request',
+                    sender: request.sender,
+                    content: '向你发送了好友请求',
+                    isRead: request.isRead,
+                    createdAt: request.createdAt
+                }));
 
-            setNotifications(formattedNotifications);
-            // 只计算未读消息的数量
-            setUnreadCount(formattedNotifications.filter(n => !n.isRead).length);
+            // 处理其他类型的通知
+            const otherNotifications = notificationsResponse.data
+                .map(notification => {
+                    let content = '';
+                    switch (notification.type) {
+                        case 'follow':
+                            content = '关注了你';
+                            break;
+                        case 'like':
+                            content = '赞了你的帖子';
+                            break;
+                        case 'comment':
+                            content = `评论了你的帖子: ${notification.content}`;
+                            break;
+                        default:
+                            content = notification.content;
+                    }
+                    return {
+                        ...notification,
+                        content
+                    };
+                });
+
+            // 合并所有通知并按时间排序
+            const allNotifications = [...pendingRequests, ...otherNotifications]
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            setNotifications(allNotifications);
+            // 更新未读计数
+            setFriendRequestCount(allNotifications.filter(n => !n.isRead).length);
         } catch (error) {
-            console.error('获取好友请求失败:', error);
+            console.error('获取通知失败:', error);
         }
     };
 
@@ -233,18 +365,28 @@ const Sidebar = () => {
         navigate(`/profile/${storedUser._id}`);
     };
 
-    // 修改处理通知点击的函数
+    // 修改通知点击处理函数
     const handleNotificationClick = async (notification) => {
         try {
             const token = sessionStorage.getItem('token');
-            // 标记该通知为已读
-            await axios.put(
-                `http://localhost:5000/api/friends/requests/${notification._id}/read`,
-                {},
-                { headers: { Authorization: `Bearer ${token}` }}
-            );
+            
+            if (notification.type === 'friend_request') {
+                // 处理好友请求通知
+                await axios.put(
+                    `http://localhost:5000/api/friends/requests/${notification._id}/read`,
+                    {},
+                    { headers: { Authorization: `Bearer ${token}` }}
+                );
+            } else {
+                // 处理其他类型通知
+                await axios.put(
+                    `http://localhost:5000/api/notifications/read/${notification._id}`,
+                    {},
+                    { headers: { Authorization: `Bearer ${token}` }}
+                );
+            }
 
-            // 更新本地通知状态，但保留通知
+            // 更新本地通知状态
             setNotifications(prev =>
                 prev.map(n => 
                     n._id === notification._id ? { ...n, isRead: true } : n
@@ -252,7 +394,7 @@ const Sidebar = () => {
             );
             
             // 更新未读计数
-            setUnreadCount(prev => Math.max(0, prev - 1));
+            setFriendRequestCount(prev => Math.max(0, prev - 1));
 
         } catch (error) {
             console.error('处理通知失败:', error);
@@ -264,21 +406,30 @@ const Sidebar = () => {
     const handleMarkAllRead = async () => {
         try {
             const token = sessionStorage.getItem('token');
-            await axios.put(
-                'http://localhost:5000/api/friends/requests/read-all',
-                {},
-                {
-                    headers: { Authorization: `Bearer ${token}` }
-                }
-            );
             
-            // 更新本地通知状态，但保留所有通知
+            // 并行处理两种通知的已读标记
+            await Promise.all([
+                // 标记所有好友请求为已读
+                axios.put(
+                    'http://localhost:5000/api/friends/requests/read-all',
+                    {},
+                    { headers: { Authorization: `Bearer ${token}` }}
+                ),
+                // 标记所有通知为已读
+                axios.put(
+                    'http://localhost:5000/api/notifications/read-all',
+                    {},
+                    { headers: { Authorization: `Bearer ${token}` }}
+                )
+            ]);
+            
+            // 更新地通知状态
             setNotifications(prev => 
                 prev.map(n => ({ ...n, isRead: true }))
             );
             
             // 重置未读计数
-            setUnreadCount(0);
+            setFriendRequestCount(0);
             
             message.success('已标记所有通知为已读');
         } catch (error) {
@@ -287,11 +438,119 @@ const Sidebar = () => {
         }
     };
 
-    // 通知内容渲染
+    // 修改用户信息悬浮卡片内容渲染函数
+    const renderUserPopover = (userData) => {
+        if (!userData) return <div style={{ padding: '20px', textAlign: 'center' }}>加载中...</div>;
+
+        return (
+            <UserPopoverContent>
+                <div className="header">
+                    <Avatar
+                        size={64}
+                        src={userData.avatar ? `http://localhost:5000${userData.avatar}` : null}
+                        icon={!userData.avatar && <UserOutlined />}
+                    />
+                    <div className="info">
+                        <div className="username">
+                            {userData.username}
+                            {userData.privacy?.profileVisibility === 'private' && 
+                                <span style={{ fontSize: '12px', color: '#8e8e8e', marginLeft: '4px' }}>
+                                    (私密账户)
+                                </span>
+                            }
+                        </div>
+                        <div className="bio">{userData.bio || '这个人很懒，什么都没写~'}</div>
+                    </div>
+                </div>
+                <div style={{ marginTop: '12px' }}>
+                    <Button
+                        type="primary"
+                        onClick={() => navigate(`/profile/${userData._id}`)}
+                        block
+                    >
+                        查看主页
+                    </Button>
+                </div>
+            </UserPopoverContent>
+        );
+    };
+
+    // 修改 Popover 的使用方式，添加异步加载支持
+    const [popoverContent, setPopoverContent] = useState({});
+
+    // 添加获取用户数据的处理函数
+    const handlePopoverOpen = async (userId) => {
+        if (!popoverContent[userId]) {
+            setLoadingUser(true);
+            try {
+                const userData = await fetchUserInfo(userId);
+                setPopoverContent(prev => ({
+                    ...prev,
+                    [userId]: userData
+                }));
+                setCurrentPopoverUser(userData);
+            } catch (error) {
+                console.error('获取用户信息失败:', error);
+            } finally {
+                setLoadingUser(false);
+            }
+        } else {
+            setCurrentPopoverUser(popoverContent[userId]);
+        }
+    };
+
+    // 修改帖子预览渲染函数
+    const renderPostPreview = (post) => {
+        if (!post) return null;
+
+        const hasImage = post.images?.[0] || post.image;
+
+        return (
+            <PostPreviewPopover hasImage={hasImage}>
+                <div className="image-section">
+                    {hasImage ? (
+                        <img 
+                            src={`http://localhost:5000${post.images?.[0] || post.image}`}
+                            alt="Post content"
+                        />
+                    ) : (
+                        <div className="text-only">
+                            {post.content}
+                        </div>
+                    )}
+                </div>
+                <div className="content-section">
+                    <div className="header">
+                        <Avatar
+                            size={32}
+                            src={post.author?.avatar ? `http://localhost:5000${post.author.avatar}` : null}
+                            icon={!post.author?.avatar && <UserOutlined />}
+                        />
+                        <strong>{post.author?.username}</strong>
+                    </div>
+                    {hasImage && (
+                        <div className="post-content">
+                            {post.content}
+                        </div>
+                    )}
+                    <div className="post-stats">
+                        <div className="stat-item">
+                            <HeartOutlined /> {post.likes?.length || 0}
+                        </div>
+                        <div className="stat-item">
+                            <CommentOutlined /> {post.comments?.length || 0}
+                        </div>
+                    </div>
+                </div>
+            </PostPreviewPopover>
+        );
+    };
+
+    // 修改通知内容渲染，添加用户悬浮卡片
     const notificationContent = (
         <NotificationPopover>
             <div className="notification-header">
-                <span>好友请求</span>
+                <span>通知</span>
                 {notifications.some(n => !n.isRead) && (
                     <Button type="link" size="small" onClick={handleMarkAllRead}>
                         全部标记已读
@@ -299,7 +558,7 @@ const Sidebar = () => {
                 )}
             </div>
             {notifications.length === 0 ? (
-                <Empty description="暂无好友请求" style={{ padding: '20px' }} />
+                <Empty description="暂无通知" style={{ padding: '20px' }} />
             ) : (
                 notifications.map(notification => (
                     <div
@@ -310,17 +569,86 @@ const Sidebar = () => {
                             backgroundColor: notification.isRead ? 'white' : 'rgba(29, 155, 240, 0.1)'
                         }}
                     >
-                        <Avatar
-                            className="avatar"
-                            src={notification.sender.avatar ? 
-                                `http://localhost:5000${notification.sender.avatar}` : null}
-                            icon={!notification.sender.avatar && <UserOutlined />}
-                        />
+                        <Popover
+                            placement="right"
+                            trigger="hover"
+                            onVisibleChange={(visible) => {
+                                if (visible) {
+                                    handlePopoverOpen(notification.sender._id);
+                                }
+                            }}
+                            content={loadingUser ? 
+                                <div style={{ padding: '20px', textAlign: 'center' }}>加载中...</div> : 
+                                renderUserPopover(currentPopoverUser || notification.sender)
+                            }
+                            destroyTooltipOnHide
+                            mouseEnterDelay={0.5}
+                            overlayStyle={{ padding: 0 }}
+                        >
+                            <Avatar
+                                className="avatar"
+                                src={notification.sender.avatar ? 
+                                    `http://localhost:5000${notification.sender.avatar}` : null}
+                                icon={!notification.sender.avatar && <UserOutlined />}
+                            />
+                        </Popover>
                         <div className="content">
                             <div>
-                                <strong>{notification.sender.username}</strong>
+                                <Popover
+                                    placement="right"
+                                    trigger="hover"
+                                    onVisibleChange={(visible) => {
+                                        if (visible) {
+                                            handlePopoverOpen(notification.sender._id);
+                                        }
+                                    }}
+                                    content={loadingUser ? 
+                                        <div style={{ padding: '20px', textAlign: 'center' }}>加载中...</div> : 
+                                        renderUserPopover(currentPopoverUser || notification.sender)
+                                    }
+                                    destroyTooltipOnHide
+                                    mouseEnterDelay={0.5}
+                                    overlayStyle={{ padding: 0 }}
+                                >
+                                    <strong style={{ cursor: 'pointer' }}>
+                                        {notification.sender.username}
+                                    </strong>
+                                </Popover>
                                 {' '}
-                                向你发送了好友请求
+                                {(notification.type === 'like' || notification.type === 'comment') && notification.post ? (
+                                    <Popover
+                                        placement="right"
+                                        trigger="hover"
+                                        content={renderPostPreview(notification.post)}
+                                        destroyTooltipOnHide
+                                        mouseEnterDelay={0.5}
+                                        overlayStyle={{ padding: 0 }}
+                                    >
+                                        <span 
+                                            style={{ 
+                                                cursor: 'pointer',
+                                                color: '#1890ff'
+                                            }}
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // 阻止事件冒泡
+                                                const authorId = notification.post?.author?._id || 
+                                                        notification.post?.author || 
+                                                        notification.sender?._id;  // 如果都没有，使用通知发送者的ID作为后备
+                                                if (authorId) {
+                                                    navigate(`/profile/${authorId}`, {
+                                                        state: { selectedPost: notification.post }
+                                                    });
+                                                } else {
+                                                    message.error('无法获取帖子作者信息');
+                                                }
+                                            }}
+                                        >
+                                            {notification.content}
+                                        </span>
+                                    </Popover>
+                                ) : (
+                                    <span>{notification.content}</span>
+                                )}
                             </div>
                             <div className="time">
                                 {formatTime(notification.createdAt)}
@@ -332,6 +660,26 @@ const Sidebar = () => {
         </NotificationPopover>
     );
     
+    // 简化用户信息获取函数
+    const fetchUserInfo = async (userId) => {
+        try {
+            const token = sessionStorage.getItem('token');
+            const response = await axios.get(
+                `http://localhost:5000/api/users/${userId}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Session-ID': sessionStorage.getItem('sessionId')
+                    }
+                }
+            );
+            return response.data;
+        } catch (error) {
+            console.error('获取用户信息失败:', error);
+            return null;
+        }
+    };
+
     return (
         <SidebarContainer>
             <Logo>GREEN NET</Logo>
@@ -362,7 +710,7 @@ const Sidebar = () => {
                                 placement="right"
                                 overlayStyle={{ padding: 0 }}
                             >
-                                <Badge count={unreadCount}>
+                                <Badge count={friendRequestCount}>
                                     <BellOutlined />
                                     <span style={{marginLeft: '8px'}}>通知</span>
                                 </Badge>

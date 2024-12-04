@@ -7,6 +7,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 
 // 确保上传目录存在
 const uploadDir = path.join(__dirname, '../uploads/posts');
@@ -130,7 +131,7 @@ router.get('/feed', auth, async (req, res) => {
     }
 });
 
-// 可选：添加分页支持
+// 添加分页支持
 router.get('/feed/page/:page', auth, async (req, res) => {
     try {
         const page = parseInt(req.params.page) || 1;
@@ -212,7 +213,6 @@ router.post('/', auth, async (req, res) => {
 // 点赞帖子
 router.post('/:postId/like', auth, async (req, res) => {
     try {
-        // 清理 postId，移除可能的 ...
         const postId = req.params.postId.replace(/\.\.\./g, '');
         console.log('点赞请求 - postId:', postId);
         console.log('点赞用户:', req.userId);
@@ -234,8 +234,9 @@ router.post('/:postId/like', auth, async (req, res) => {
         const likeIndex = post.likes.findIndex(
             id => id.toString() === req.userId.toString()
         );
+        const isLiked = likeIndex > -1;
 
-        if (likeIndex > -1) {
+        if (isLiked) {
             // 取消点赞
             post.likes.splice(likeIndex, 1);
             console.log('取消点赞');
@@ -243,6 +244,17 @@ router.post('/:postId/like', auth, async (req, res) => {
             // 添加点赞
             post.likes.push(req.userId);
             console.log('添加点赞');
+
+            // 只在新增点赞时创建通知
+            if (post.author.toString() !== req.userId) {
+                await new Notification({
+                    type: 'like',
+                    sender: req.userId,
+                    recipient: post.author,
+                    post: post._id,
+                    content: ''  // 点赞通知不需要额外内容
+                }).save();
+            }
         }
 
         const updatedPost = await post.save();
@@ -294,6 +306,17 @@ router.post('/:id/comment', auth, async (req, res) => {
         
         const newComment = updatedPost.comments[updatedPost.comments.length - 1];
         res.status(201).json(newComment);
+
+        // 添加评论通知
+        if (post.author.toString() !== req.userId) {
+            await new Notification({
+                type: 'comment',
+                sender: req.userId,
+                recipient: post.author,
+                post: post._id,
+                content: req.body.content
+            }).save();
+        }
     } catch (error) {
         console.error('评论错误:', error);
         res.status(500).json({ message: '服务器错误' });

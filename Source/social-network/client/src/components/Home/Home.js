@@ -711,7 +711,7 @@ const Home = () => {
                 [postId]: ''
             }));
 
-            message.success('评论功');
+            message.success('评论成功');
         } catch (error) {
             console.error('评论失败:', error);
             message.error('评论失败，请重试');
