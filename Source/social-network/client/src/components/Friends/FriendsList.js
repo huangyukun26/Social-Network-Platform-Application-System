@@ -105,7 +105,7 @@ const FriendsList = ({ friends, loading, onFriendUpdate }) => {
             if (!token) return;
 
             const response = await axios.get(
-                '/api/friends/status/online',
+                'http://localhost:5000/api/friends/status/online',
                 {
                     headers: { 
                         Authorization: `Bearer ${token}`

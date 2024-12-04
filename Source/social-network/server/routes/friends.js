@@ -110,7 +110,6 @@ router.put('/groups/:groupId', auth, friendController.updateFriendGroup);
 router.delete('/groups/:groupId', auth, friendController.deleteFriendGroup);
 
 // 好友在线状态相关路由
-router.post('/status/online', auth, friendController.updateOnlineStatus);
 router.get('/status/online', auth, async (req, res) => {
     try {
         const userId = req.userId;

@@ -680,6 +680,22 @@ const Sidebar = () => {
         }
     };
 
+    // 修改获取在线状态的请求
+    const fetchOnlineStatus = async () => {
+        try {
+            const token = sessionStorage.getItem('token');
+            const response = await axios.get('http://localhost:5000/api/friends/status/online', {
+                headers: { 
+                    Authorization: `Bearer ${token}`,
+                    'Session-ID': sessionStorage.getItem('sessionId')
+                }
+            });
+            // 处理响应...
+        } catch (error) {
+            console.error('获取在线状态失败:', error);
+        }
+    };
+
     return (
         <SidebarContainer>
             <Logo>GREEN NET</Logo>
