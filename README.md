@@ -93,8 +93,8 @@ Main system pages:
 1. Clone repository
 
 ```
-git clone https://github.com/yourusername/social-network.git
-cd social-network
+https://github.com/huangyukun26/NoSQL-Course-Design.git
+cd Source/social-network
 ```
 
 2. Install dependencies
