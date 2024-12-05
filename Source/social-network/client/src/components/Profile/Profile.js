@@ -270,7 +270,7 @@ const Profile = () => {
             setFollowing(followingRes.data);
         } catch (error) {
             if (!error.response || error.response.status !== 404) {
-                console.error('获取关注数据失败:', error);
+                console.error('获取关注数失败:', error);
                 message.error('获取关注数据失败');
             }
         }
@@ -315,7 +315,10 @@ const Profile = () => {
                                 'Cache-Control': 'no-cache'
                             }
                         }
-                    ),
+                    ).catch(err => {
+                        console.log('获取关注状态失败:', err);
+                        return { data: { isFollowing: false } };
+                    }),
                     axios.get(
                         `http://localhost:5000/api/friends/status/${userId}`,
                         {
@@ -324,7 +327,10 @@ const Profile = () => {
                                 'Session-ID': sessionId
                             }
                         }
-                    )
+                    ).catch(err => {
+                        console.log('获取好友状态失败:', err);
+                        return { data: { status: 'none' } };
+                    })
                 );
             }
 
@@ -339,41 +345,47 @@ const Profile = () => {
             }
 
             // 获取帖子
-            try {
-                const postsResponse = await axios.get(
-                    `http://localhost:5000/api/posts/user/${userId || userData._id}`,
-                    { 
-                        headers: { 
-                            Authorization: `Bearer ${token}`,
-                            'Session-ID': sessionId
+            if (!userData.isPrivate || userId === currentUserId) {
+                try {
+                    const postsResponse = await axios.get(
+                        `http://localhost:5000/api/posts/user/${userId || userData._id}`,
+                        { 
+                            headers: { 
+                                Authorization: `Bearer ${token}`,
+                                'Session-ID': sessionId
+                            }
                         }
-                    }
-                );
-                setPosts(postsResponse.data);
-            } catch (error) {
-                console.error('获取帖子失败:', error);
+                    );
+                    setPosts(postsResponse.data);
+                } catch (error) {
+                    console.error('获取帖子失败:', error);
+                    setPosts([]);
+                }
+            } else {
                 setPosts([]);
             }
 
             // 获取关注和粉丝数据
-            try {
-                const [followersRes, followingRes] = await Promise.all([
-                    axios.get(
-                        `http://localhost:5000/api/follow/${userId || userData._id}/followers`,
-                        { headers: { Authorization: `Bearer ${token}` }}
-                    ),
-                    axios.get(
-                        `http://localhost:5000/api/follow/${userId || userData._id}/following`,
-                        { headers: { Authorization: `Bearer ${token}` }}
-                    )
-                ]);
+            if (!userData.isPrivate || userId === currentUserId) {
+                try {
+                    const [followersRes, followingRes] = await Promise.all([
+                        axios.get(
+                            `http://localhost:5000/api/follow/${userId || userData._id}/followers`,
+                            { headers: { Authorization: `Bearer ${token}` }}
+                        ),
+                        axios.get(
+                            `http://localhost:5000/api/follow/${userId || userData._id}/following`,
+                            { headers: { Authorization: `Bearer ${token}` }}
+                        )
+                    ]);
 
-                setFollowers(followersRes.data);
-                setFollowing(followingRes.data);
-            } catch (error) {
-                console.error('获取关注数据失败:', error);
-                setFollowers([]);
-                setFollowing([]);
+                    setFollowers(followersRes.data);
+                    setFollowing(followingRes.data);
+                } catch (error) {
+                    console.error('获取关注数据失败:', error);
+                    setFollowers([]);
+                    setFollowing([]);
+                }
             }
 
         } catch (error) {
@@ -452,6 +464,11 @@ const Profile = () => {
         }
     }, [userId, currentUserId]);
 
+    // 添加一个判断是否为私密账户的函数
+    const isPrivateProfile = useMemo(() => {
+        return profileData?.privacy?.profileVisibility === 'private' && !isOwnProfile;
+    }, [profileData, isOwnProfile]);
+
     // 7. 渲染逻辑
     if (loading) {
         return (
@@ -467,7 +484,7 @@ const Profile = () => {
         return (
             <ProfileContainer>
                 <Empty
-                    description="未找到用户信"
+                    description="未找到用户信息"
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                 />
             </ProfileContainer>
@@ -486,6 +503,18 @@ const Profile = () => {
 
         if (userId === currentUserId) {
             return null;
+        }
+
+        // 如果是私密账户，只显示关注按钮
+        if (isPrivateProfile) {
+            return (
+                <Button 
+                    type={isFollowing ? 'default' : 'primary'}
+                    onClick={handleFollowClick}
+                >
+                    {isFollowing ? '已关注' : '关注'}
+                </Button>
+            );
         }
 
         return (
@@ -580,7 +609,7 @@ const Profile = () => {
                 <InfoSection>
                     <Username>
                         {profileData?.username}
-                        {profileData?.privacy?.profileVisibility === 'private' && 
+                        {isPrivateProfile && 
                             <span style={{ fontSize: '14px', color: '#8e8e8e', marginLeft: '8px' }}>
                                 (私密账户)
                             </span>
@@ -590,78 +619,103 @@ const Profile = () => {
                     {renderActionButtons()}
 
                     <Stats>
-                        <StatItem onClick={() => setActiveTab('posts')}>
-                            <strong>{posts?.length || 0}</strong> 帖子
-                        </StatItem>
-                        {canViewFollowers && (
-                            <StatItem onClick={() => setActiveTab('followers')}>
-                                <strong>{followers?.length || 0}</strong> 粉丝
-                            </StatItem>
-                        )}
-                        {canViewFollowing && (
-                            <StatItem onClick={() => setActiveTab('following')}>
-                                <strong>{following?.length || 0}</strong> 关注
-                            </StatItem>
+                        {/* 私密账户显示占位符 */}
+                        {isPrivateProfile ? (
+                            <>
+                                <StatItem>
+                                    <strong>**</strong> 帖子
+                                </StatItem>
+                                <StatItem>
+                                    <strong>**</strong> 粉丝
+                                </StatItem>
+                                <StatItem>
+                                    <strong>**</strong> 关注
+                                </StatItem>
+                            </>
+                        ) : (
+                            <>
+                                <StatItem onClick={() => setActiveTab('posts')}>
+                                    <strong>{posts?.length || 0}</strong> 帖子
+                                </StatItem>
+                                {canViewFollowers && (
+                                    <StatItem onClick={() => setActiveTab('followers')}>
+                                        <strong>{followers?.length || 0}</strong> 粉丝
+                                    </StatItem>
+                                )}
+                                {canViewFollowing && (
+                                    <StatItem onClick={() => setActiveTab('following')}>
+                                        <strong>{following?.length || 0}</strong> 关注
+                                    </StatItem>
+                                )}
+                            </>
                         )}
                     </Stats>
 
-                    <Bio>{profileData?.bio || '暂无简介'}</Bio>
+                    {/* 私密账户显示提示信息 */}
+                    {isPrivateProfile ? (
+                        <Bio>这是一个私密账户</Bio>
+                    ) : (
+                        <Bio>{profileData?.bio || '暂无简介'}</Bio>
+                    )}
                 </InfoSection>
             </ProfileHeader>
 
-            <Tabs activeKey={activeTab} onChange={setActiveTab}>
-                <TabPane tab={`帖子 ${posts?.length || 0}`} key="posts">
-                    <PostGrid>
-                        {posts.map(post => (
-                            <PostItem key={post._id} onClick={() => handlePostClick(post)}>
-                                {(post.images?.[0] || post.image) ? (
-                                    <>
-                                        <PostImage
-                                            src={`http://localhost:5000${post.images?.[0] || post.image}`}
-                                            alt="Post preview"
-                                        />
-                                        <Overlay className="overlay">
-                                            <Space size={30}>
-                                                <div>
-                                                    <HeartOutlined /> {post.likes?.length || 0}
-                                                </div>
-                                                <div>
-                                                    <CommentOutlined /> {post.comments?.length || 0}
-                                                </div>
-                                            </Space>
-                                        </Overlay>
-                                    </>
-                                ) : (
-                                    <div className="text-only">
-                                        {post.content}
-                                    </div>
-                                )}
-                            </PostItem>
-                        ))}
-                    </PostGrid>
-                </TabPane>
-                {canViewFollowers && (
-                    <TabPane tab={`粉丝 ${followers?.length || 0}`} key="followers">
-                        <FollowList 
-                            users={followers}
-                            type="followers"
-                            onUpdate={fetchProfileData}
-                            currentUserId={currentUserId}
-                            isOwnProfile={!userId || currentUserId === profileData?._id}
-                        />
+            {/* 私密账户不显示Tabs内容 */}
+            {!isPrivateProfile && (
+                <Tabs activeKey={activeTab} onChange={setActiveTab}>
+                    <TabPane tab={`帖子 ${posts?.length || 0}`} key="posts">
+                        <PostGrid>
+                            {posts.map(post => (
+                                <PostItem key={post._id} onClick={() => handlePostClick(post)}>
+                                    {(post.images?.[0] || post.image) ? (
+                                        <>
+                                            <PostImage
+                                                src={`http://localhost:5000${post.images?.[0] || post.image}`}
+                                                alt="Post preview"
+                                            />
+                                            <Overlay className="overlay">
+                                                <Space size={30}>
+                                                    <div>
+                                                        <HeartOutlined /> {post.likes?.length || 0}
+                                                    </div>
+                                                    <div>
+                                                        <CommentOutlined /> {post.comments?.length || 0}
+                                                    </div>
+                                                </Space>
+                                            </Overlay>
+                                        </>
+                                    ) : (
+                                        <div className="text-only">
+                                            {post.content}
+                                        </div>
+                                    )}
+                                </PostItem>
+                            ))}
+                        </PostGrid>
                     </TabPane>
-                )}
-                {canViewFollowing && (
-                    <TabPane tab={`关注 ${following?.length || 0}`} key="following">
-                        <FollowList 
-                            users={following}
-                            type="following"
-                            onUpdate={fetchProfileData}
-                            currentUserId={currentUserId}
-                        />
-                    </TabPane>
-                )}
-            </Tabs>
+                    {canViewFollowers && (
+                        <TabPane tab={`粉丝 ${followers?.length || 0}`} key="followers">
+                            <FollowList 
+                                users={followers}
+                                type="followers"
+                                onUpdate={fetchProfileData}
+                                currentUserId={currentUserId}
+                                isOwnProfile={isOwnProfile}
+                            />
+                        </TabPane>
+                    )}
+                    {canViewFollowing && (
+                        <TabPane tab={`关注 ${following?.length || 0}`} key="following">
+                            <FollowList 
+                                users={following}
+                                type="following"
+                                onUpdate={fetchProfileData}
+                                currentUserId={currentUserId}
+                            />
+                        </TabPane>
+                    )}
+                </Tabs>
+            )}
 
             {/* 添加编辑个人资料模态框 */}
             {isEditModalVisible && (

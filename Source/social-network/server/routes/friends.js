@@ -8,7 +8,7 @@ const Neo4jService = require('../services/neo4jService');
 const DataSyncService = require('../services/DataSyncService');
 const FriendRequest = require('../models/FriendRequest');
 
-// 添加好友隐私检查中间件
+// 修改好友隐私检查中间件
 const checkFriendPrivacy = async (req, res, next) => {
     try {
         const targetUser = await User.findById(req.params.userId);
@@ -18,31 +18,38 @@ const checkFriendPrivacy = async (req, res, next) => {
             return res.status(404).json({ message: '用户不存在' });
         }
 
-        // 检查是否是好友关系
-        const areFriends = requestingUser.friends.includes(targetUser._id);
+        // 如果是查看自己的信息，直接通过
+        if (targetUser._id.toString() === requestingUser._id.toString()) {
+            return next();
+        }
 
-        // 如果是好友，允许访问基本信息
+        // 检查是否是好友关系
+        const areFriends = requestingUser.friends?.includes(targetUser._id);
+
+        // 如果是好友，允许访问
         if (areFriends) {
             req.isFriend = true;
             return next();
         }
 
-        // 如果不是好友且是私密账户，限制信息访问
-        if (targetUser.privacy.profileVisibility === 'private') {
-            return res.status(403).json({ 
-                message: '该用户是私密账户',
-                limitedInfo: {
-                    _id: targetUser._id,
-                    username: targetUser.username,
-                    avatar: targetUser.avatar,
-                    isPrivate: true
-                }
+        // 如果是私密账户，返回基本状态而不是403错误
+        if (targetUser.privacy?.profileVisibility === 'private') {
+            return res.json({ 
+                status: 'none',
+                isPrivate: true,
+                message: '该用户是私密账户'
             });
         }
 
         next();
     } catch (error) {
-        res.status(500).json({ message: '服务器错误' });
+        console.error('检查好友隐私设置失败:', error);
+        // 返回基本状态而不是500错误
+        res.json({ 
+            status: 'none',
+            error: true,
+            message: '获取状态失败'
+        });
     }
 };
 
@@ -80,7 +87,7 @@ router.get('/analysis/influence', auth, friendController.getSocialInfluenceAnaly
 // 智能好友推荐
 router.get('/smart-recommendations', auth, friendController.getSmartRecommendations);
 
-// 社交路径分析
+// 社���路径分析
 router.get('/connection-path/:targetUserId', auth, friendController.getConnectionPath);
 
 // 兴趣群组发现
@@ -109,7 +116,7 @@ router.delete('/groups/:groupId/members/:friendId', auth, friendController.remov
 router.put('/groups/:groupId', auth, friendController.updateFriendGroup);
 router.delete('/groups/:groupId', auth, friendController.deleteFriendGroup);
 
-// 好友在线状态相关路由
+// 好友在线状���相关路由
 router.get('/status/online', auth, async (req, res) => {
     try {
         const userId = req.userId;
@@ -193,7 +200,7 @@ router.put('/requests/read-all', auth, async (req, res) => {
         res.json({ message: '所有请求已标记为已读' });
     } catch (error) {
         console.error('标记所有好友请求已读失败:', error);
-        res.status(500).json({ message: '操作失败' });
+        res.status(500).json({ message: '操��失败' });
     }
 });
 

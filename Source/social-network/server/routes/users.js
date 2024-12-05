@@ -57,7 +57,7 @@ const loginAttempts = new Map();
 const checkPrivacy = async (req, res, next) => {
     try {
         const targetUser = await User.findById(req.params.userId);
-        const requestingUser = req.userId; // 来自 auth 中间件
+        const requestingUser = req.userId;
 
         if (!targetUser) {
             return res.status(404).json({ message: '用户不存在' });
@@ -69,19 +69,28 @@ const checkPrivacy = async (req, res, next) => {
         }
 
         // 检查资料可见性
-        if (targetUser.privacy.profileVisibility === 'private') {
-            return res.status(403).json({ message: '该用户资料已设为私密' });
-        }
-
-        if (targetUser.privacy.profileVisibility === 'friends') {
-            const isFriend = targetUser.friends.includes(requestingUser);
-            if (!isFriend) {
-                return res.status(403).json({ message: '仅好友可见' });
-            }
+        if (targetUser.privacy?.profileVisibility === 'private') {
+            // 返回有限的基本信息而不是403错误
+            return res.json({
+                _id: targetUser._id,
+                username: targetUser.username,
+                avatar: targetUser.avatar,
+                privacy: {
+                    profileVisibility: 'private'
+                },
+                isPrivate: true,
+                statistics: {
+                    // 对于私密用户隐藏具体数量
+                    postsCount: '**',
+                    friendsCount: '**',
+                    followersCount: '**'
+                }
+            });
         }
 
         next();
     } catch (error) {
+        console.error('检查用户隐私设置失败:', error);
         res.status(500).json({ message: '服务器错误' });
     }
 };
@@ -278,18 +287,24 @@ router.get('/:userId', auth, checkPrivacy, async (req, res) => {
             .populate('posts')
             .lean();
 
+        // 如果是私密账户且不是本人访问，已经在 checkPrivacy 中处理过了
+        if (user.privacy?.profileVisibility === 'private' && 
+            userId !== requestingUser) {
+            return;
+        }
+
         // 根据隐私设置过滤数据
         if (userId !== requestingUser) {
-            if (!user.privacy.showEmail) {
+            if (!user.privacy?.showEmail) {
                 delete user.email;
             }
-            if (!user.privacy.showFollowers) {
+            if (!user.privacy?.showFollowers) {
                 delete user.followers;
             }
-            if (!user.privacy.showFollowing) {
+            if (!user.privacy?.showFollowing) {
                 delete user.following;
             }
-            if (!user.privacy.showPosts) {
+            if (!user.privacy?.showPosts) {
                 delete user.posts;
             }
         }
@@ -303,7 +318,7 @@ router.get('/:userId', auth, checkPrivacy, async (req, res) => {
 
         res.json(user);
     } catch (error) {
-        console.error('获取户资料失败:', error);
+        console.error('获取用户资料失败:', error);
         res.status(500).json({ message: '获取用户资料失败' });
     }
 });
@@ -510,7 +525,7 @@ router.put('/profile', auth, upload.single('avatar'), async (req, res) => {
         await user.save();
         console.log('更新后的用户数据:', user.toObject());
 
-        // 返回更新后的用户数据
+        // 返回更新后的用户数��
         const updatedUser = await User.findById(user._id)
             .select('-password')
             .lean();

@@ -8,6 +8,7 @@ const fs = require('fs');
 const RedisClient = require('./utils/RedisClient');
 const SocketManager = require('./utils/socketManager');
 const KafkaService = require('./services/kafkaService');
+const connectDB = require('./config/database');
 
 const app = express();
 const server = http.createServer(app);
@@ -57,6 +58,17 @@ async function initializeServices() {
         });
         console.log('MongoDB连接成功');
         console.log('数据库URI:', process.env.MONGODB_URI);
+
+
+         // 连接数据库
+         //const dbConnection = await connectDB();
+        
+         //console.log('数据库连接状态:', 
+             //dbConnection.readyState === 0 ? '已断开' :
+             //dbConnection.readyState === 1 ? '已连接' :
+             //dbConnection.readyState === 2 ? '正在连接' :
+             //dbConnection.readyState === 3 ? '正在断开' : '未知状态'
+         //);
 
         // Redis 连接
         await RedisClient.client.ping();
