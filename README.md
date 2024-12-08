@@ -93,7 +93,7 @@ Main system pages:
 1. Clone repository
 
 ```
-https://github.com/huangyukun26/NoSQL-Course-Design.git
+git clone https://github.com/huangyukun26/NOSQLCourseDesign-SocialNetworkSystem.git
 cd Source/social-network
 ```
 
