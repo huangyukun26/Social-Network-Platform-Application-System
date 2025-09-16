@@ -1,4 +1,4 @@
-# 2024 BJFU NOSQL Database Course Design --Social Network System
+# 2024 BJFU NOSQL Database Course Design --Social Network System（I came in first in the comprehensive assessment）
 
 ## Introduction
 
